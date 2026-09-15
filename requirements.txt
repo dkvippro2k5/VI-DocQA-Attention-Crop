@@ -1,0 +1,21 @@
+# API clients
+google-generativeai
+openai
+
+# Retrieval
+sentence-transformers
+faiss-cpu
+
+# OCR (choose one; PaddleOCR often works well for Vietnamese)
+# paddleocr
+# paddlepaddle
+
+# Data / utils
+pandas
+numpy
+python-dotenv
+tqdm
+pillow
+
+# Evaluation
+scikit-learn
