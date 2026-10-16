@@ -16,6 +16,8 @@ numpy
 python-dotenv
 tqdm
 pillow
+datasets
+matplotlib
 
 # Evaluation
 scikit-learn

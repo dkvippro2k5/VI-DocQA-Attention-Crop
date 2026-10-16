@@ -15,6 +15,10 @@ data/raw/*
 !data/raw/.gitkeep
 data/processed/*
 !data/processed/.gitkeep
+data/diagnostic/en/*
+!data/diagnostic/en/.gitkeep
+data/diagnostic/vi/*
+!data/diagnostic/vi/.gitkeep
 *.pdf
 *.png
 *.jpg
