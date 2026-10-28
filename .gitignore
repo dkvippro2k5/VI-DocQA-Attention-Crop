@@ -23,11 +23,16 @@ data/diagnostic/vi/*
 *.png
 *.jpg
 *.jpeg
+*.zip
 
 # Results / large outputs
 results/**/*.json
 results/**/*.csv
+!results/**/*_config.json
 !results/**/.gitkeep
+
+# Claude Code local state
+.claude/
 
 # Notebooks checkpoints
 .ipynb_checkpoints/

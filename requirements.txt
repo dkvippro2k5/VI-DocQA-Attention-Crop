@@ -6,9 +6,9 @@ openai
 sentence-transformers
 faiss-cpu
 
-# OCR (choose one; PaddleOCR often works well for Vietnamese)
-# paddleocr
-# paddlepaddle
+# PDF / OCR
+pymupdf
+easyocr
 
 # Data / utils
 pandas
@@ -17,6 +17,7 @@ python-dotenv
 tqdm
 pillow
 datasets
+huggingface_hub
 matplotlib
 
 # Evaluation
