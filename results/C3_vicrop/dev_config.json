@@ -1,0 +1,12 @@
+{
+  "model": "Qwen/Qwen2.5-VL-3B-Instruct",
+  "dtype": "float16",
+  "attn": "eager",
+  "max_pixels": 802816,
+  "att_layer": 22,
+  "bbox_size": 336,
+  "general_prompt": "Write a general description of the image.",
+  "answer_suffix": "\nTrả lời ngắn gọn bằng một cụm từ hoặc một câu.",
+  "max_new_tokens": 64,
+  "split": "dev"
+}
