@@ -55,7 +55,15 @@ def bbox_from_att_map(att_map: np.ndarray, image_size: tuple, bbox_size: int):
 
 
 def rel_att_map(model, processor, image, question_prompt: str, layer: int = ATT_LAYER):
-    """Trả về rel_att (H_grid, W_grid). Chạy trên GPU, cần attn_implementation='eager'."""
+    """Trả về rel_att (H_grid, W_grid) của một layer."""
+    return rel_att_maps(model, processor, image, question_prompt, (layer,))[layer]
+
+
+def rel_att_maps(model, processor, image, question_prompt: str, layers=(ATT_LAYER,)):
+    """Trả về {layer: rel_att (H_grid, W_grid)}. Một lần forward cho mọi layer.
+
+    Chạy trên GPU, cần attn_implementation='eager'.
+    """
     import torch
 
     def run(prompt):
@@ -65,10 +73,12 @@ def rel_att_map(model, processor, image, question_prompt: str, layer: int = ATT_
         with torch.no_grad():
             out = model(**inp, output_attentions=True)
         ids = inp["input_ids"][0]
-        pos = (ids == model.config.vision_start_token_id).nonzero()[0].item() + 1
-        end = (ids == model.config.vision_end_token_id).nonzero()[0].item()
-        att = out.attentions[layer][0, :, -1, pos:end].mean(dim=0).float().cpu().numpy()
+        tok = processor.tokenizer
+        pos = (ids == tok.convert_tokens_to_ids("<|vision_start|>")).nonzero()[0].item() + 1
+        end = (ids == tok.convert_tokens_to_ids("<|vision_end|>")).nonzero()[0].item()
         grid = (inp["image_grid_thw"][0, 1:] // 2).tolist()
-        return att.reshape(grid)
+        return {l: out.attentions[l][0, :, -1, pos:end].mean(dim=0).float().cpu().numpy().reshape(grid)
+                for l in layers}
 
-    return run(question_prompt) / (run(GENERAL_PROMPT) + 1e-8)
+    q, g = run(question_prompt), run(GENERAL_PROMPT)
+    return {l: q[l] / (g[l] + 1e-8) for l in layers}
