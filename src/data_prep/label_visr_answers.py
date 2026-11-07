@@ -1,4 +1,4 @@
-"""Gán đáp án cho 137 câu hỏi tiếng Việt có sẵn của VisR-Bench (5 tài liệu đã tải).
+"""Gán đáp án cho câu hỏi tiếng Việt có sẵn của VisR-Bench (mọi tài liệu đã tải trong documents_vi.json).
 
 Câu hỏi giữ nguyên từ multilingual_QA.json (đáp án gốc để trống); Qwen3-VL đọc ảnh trang
 và chép đáp án ngắn. Dùng endpoint OpenAI-compatible quốc tế trong .env (cùng haiku_label_batch.py).
@@ -24,14 +24,6 @@ IN_DIR = ROOT / "data" / "raw" / "visr_bench_vi"
 OUT_PATH = ROOT / "data" / "processed" / "visr_bench_vi" / "qa_vi_visr_answers.jsonl"
 MODEL = "qwen3-vl-plus"
 MAX_PAGE_CHARS = 6000
-
-DOC_IDS = [
-    "0004e63084e48e25a6982f11c7a77115",
-    "01d7b45bc59e9652f1764e6fbec2f05e",
-    "1aa33928936bdf5e0989361a3a68a3a0",
-    "9d418db8080ff2ea5053886d4cfdffaf",
-    "eb55d9dbe2e5ccaf00e6c15fe8191a98",
-]
 
 SYSTEM_PROMPT = """Bạn là người gán đáp án cho bộ dữ liệu hỏi đáp tài liệu tiếng Việt.
 Cho ảnh một trang, text Markdown của trang và một câu hỏi. Hãy trả lời bằng đáp án NGẮN NHẤT,
@@ -61,14 +53,49 @@ def nfc(s: str) -> str:
     return unicodedata.normalize("NFC", s or "")
 
 
+EXCLUDED_FILE = ROOT / "data" / "qa" / "excluded_documents.json"
+
+
+def excluded_docs() -> set:
+    """document_id bị loại khỏi bộ dữ liệu (data/qa/excluded_documents.json)."""
+    if not EXCLUDED_FILE.exists():
+        return set()
+    return {d["document_id"] for d in json.loads(EXCLUDED_FILE.read_text(encoding="utf-8"))["documents"]}
+
+
+GARBLED = set("˛˝˜ˆ˙°ˇ˘˚¸�")
+
+
+def pdf_page_texts(doc_id: str, n_pages: int):
+    """Text từng trang lấy từ PDF gốc (src_pdf/<doc[:8]>/doc.pdf) nếu có và đọc được; None nếu không dùng được.
+
+    page_md của VisR-Bench ở nhiều tài liệu bị mất dấu hoặc lỗi font ('TR˛˝NG TIU HC'), trong khi lớp text PDF
+    vẫn đúng. Trang PDF scan (gần như không có chữ) hoặc lỗi font thì trả None cho trang đó."""
+    pdf = IN_DIR / "src_pdf" / doc_id[:8] / "doc.pdf"
+    if not pdf.exists():
+        return None
+    import pymupdf
+    with pymupdf.open(pdf) as doc:
+        if len(doc) != n_pages:
+            return None
+        out = []
+        for page in doc:
+            t = nfc(page.get_text())
+            bad = sum(c in GARBLED for c in t) / max(1, len(t))
+            out.append(t if len(t.split()) >= 5 and bad < 0.005 else None)
+    return out
+
+
 def collect_questions() -> list:
     docs = {d["document_id"]: d for d in json.loads((IN_DIR / "documents_vi.json").read_text(encoding="utf-8"))}
+    skip = excluded_docs()
     items = []
     for d in json.loads((IN_DIR / "multilingual_QA.json").read_text(encoding="utf-8")):
         doc_id = d["file_name"]
-        if doc_id not in DOC_IDS:
+        if doc_id not in docs or doc_id in skip:
             continue
         md = docs[doc_id]["page_md"]
+        pdf_txt = pdf_page_texts(doc_id, len(md)) or [None] * len(md)
         for idx, qa in enumerate(d["qa_list"]):
             if qa.get("detected_language") != "vi" or not qa.get("question"):
                 continue
@@ -80,7 +107,7 @@ def collect_questions() -> list:
                 "page_id": page,
                 "image": img,
                 "question": nfc(qa["question"]).strip(),
-                "page_text": md[page] if page < len(md) else "",
+                "page_text": (pdf_txt[page] or md[page]) if page < len(md) else "",
             })
     return items
 

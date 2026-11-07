@@ -19,6 +19,7 @@ pillow
 datasets
 huggingface_hub
 matplotlib
+openpyxl
 
 # Evaluation
 scikit-learn

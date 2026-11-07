@@ -1,0 +1,48 @@
+{
+ "version": "visr_bench_vi_v1",
+ "scope": "bằng chứng trong một trang",
+ "decisions_exported_at": "2026-10-29T10:29:57.606Z",
+ "n_labels": 109,
+ "n_reviewed": 109,
+ "n_kept": 109,
+ "n_dropped": 0,
+ "verdict": {
+  "đúng": 91,
+  "sửa": 18
+ },
+ "answer_source": {
+  "gemini": 91,
+  "human": 14,
+  "qwen": 4
+ },
+ "bbox_source": {
+  "vẽ tay": 26,
+  "gợi ý": 43,
+  "vẽ tay (trước khi có gợi ý)": 31,
+  "gợi ý + vẽ thêm": 1,
+  "gợi ý, bỏ bớt": 8
+ },
+ "bbox_mode": {
+  "all": 107,
+  "any": 2
+ },
+ "n_boxes": {
+  "1": 92,
+  "2": 16,
+  "3": 1
+ },
+ "long_answer": 8,
+ "answer_form": {
+  "short": 98,
+  "list": 6,
+  "long": 5
+ },
+ "drop_reason": {},
+ "by_document": {
+  "0004e630": 86,
+  "1aa33928": 9,
+  "eb55d9db": 8,
+  "9d418db8": 6
+ },
+ "gemini_accept_rate": 0.835
+}

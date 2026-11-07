@@ -1,0 +1,19 @@
+{
+  "description": "Tài liệu bị loại khỏi bộ dữ liệu ĐA2. Mọi bước (gán nhãn, duyệt, chia dev/test, chạy các nhánh) bỏ qua các tài liệu này.",
+  "documents": [
+    {
+      "document_id": "01d7b45bc59e9652f1764e6fbec2f05e",
+      "source": "VisR-Bench (Multilingual), bài báo về thôn An Bằng, 10 trang, 28 câu hỏi tiếng Việt",
+      "reason": "Nội dung chính trị nhạy cảm (có ảnh và đoạn văn mang tính chính trị), không phù hợp đưa vào bộ dữ liệu đồ án",
+      "decided_on": "2026-10-29",
+      "affects": "28 câu hỏi gốc VisR-Bench; 13 câu tự sinh ở giai đoạn pilot (dev C3, đo lỗi dấu ảnh sạch)"
+    },
+    {
+      "document_id": "afaa20365d8273ef0ff4601d83748253",
+      "source": "VisR-Bench (Multilingual), bản tin kỷ niệm 30 năm Phong trào Thiếu Nhi Thánh Thể Việt Nam tại Pháp (Paris), 2 trang, 6 câu hỏi tiếng Việt",
+      "reason": "Nội dung tôn giáo của cộng đồng người Việt ở nước ngoài; loại để tránh nội dung nhạy cảm, dù không có nội dung chính trị",
+      "decided_on": "2026-10-29",
+      "affects": "6 câu hỏi gốc VisR-Bench; chưa được gán nhãn"
+    }
+  ]
+}

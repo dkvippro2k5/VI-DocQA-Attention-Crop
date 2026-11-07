@@ -12,10 +12,12 @@ VisR-Bench gồm 373 tài liệu tiếng Anh + 913 tài liệu đa ngữ; phần
     qa_vi.jsonl                            mỗi dòng một câu hỏi (document_id, page_id, question, ...)
     documents_vi.json                      metadata tài liệu (url, số trang, text từng trang)
     DOWNLOAD_INFO.json
+    src_pdf/<file_name[:8]>/doc.pdf        PDF gốc từ trường url (--pdf), để lấy tọa độ từ gợi ý khung bằng chứng
 
 Ví dụ (chạy từ gốc repo):
     python -m src.data_prep.download_visr_vi                 # 5 tài liệu ngẫu nhiên, <= 60 trang
-    python -m src.data_prep.download_visr_vi --n-docs 0      # cả 27 tài liệu
+    python -m src.data_prep.download_visr_vi --n-docs 0      # cả 27 tài liệu (vẫn bỏ tài liệu > --max-pages)
+    python -m src.data_prep.download_visr_vi --n-docs 0 --pdf --hf-revision <sha>   # kèm PDF gốc, cố định bản HF
 """
 
 import argparse
@@ -54,6 +56,30 @@ def load_multilingual_qa(cache_path: Path) -> list[dict]:
     return json.loads(cache_path.read_text(encoding="utf-8"))
 
 
+def download_pdf(url: str, out: Path, n_pages: int) -> str:
+    """Tải PDF gốc; trả về trạng thái. PDF chỉ dùng được khi số trang khớp số ảnh của VisR-Bench."""
+    import pymupdf
+    if not out.exists():
+        out.parent.mkdir(parents=True, exist_ok=True)
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                data = r.read()
+        except Exception as e:  # link chết, chặn bot, hết hạn chứng chỉ...
+            return f"lỗi tải ({type(e).__name__})"
+        if not data.startswith(b"%PDF"):
+            return "không phải PDF"
+        out.write_bytes(data)
+    try:
+        with pymupdf.open(out) as doc:
+            n, chars = len(doc), sum(len(pg.get_text()) for pg in doc)
+    except Exception as e:
+        return f"PDF hỏng ({type(e).__name__})"
+    if n != n_pages:
+        return f"lệch số trang ({n} so với {n_pages} ảnh)"
+    return "ok" if chars > 50 * n else "ok, gần như không có lớp text"
+
+
 def main() -> None:
     # Console Windows mặc định cp1252, không in được tiếng Việt
     sys.stdout.reconfigure(encoding="utf-8")
@@ -63,6 +89,8 @@ def main() -> None:
     parser.add_argument("--max-pages", type=int, default=60, help="Bỏ tài liệu dài hơn (0 = không giới hạn).")
     parser.add_argument("--doc-ids", nargs="+", help="Chỉ định file_name cụ thể (bỏ qua --n-docs).")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--hf-revision", help="Commit của dataset HF; mặc định bản mới nhất.")
+    parser.add_argument("--pdf", action="store_true", help="Tải thêm PDF gốc từ url của từng tài liệu.")
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
     args = parser.parse_args()
 
@@ -82,7 +110,7 @@ def main() -> None:
         n = len(pool) if args.n_docs == 0 else min(args.n_docs, len(pool))
         chosen = sorted(random.Random(args.seed).sample(pool, n), key=lambda d: d["file_name"])
 
-    hf_sha = HfApi().dataset_info(HF_REPO_ID).sha
+    hf_sha = args.hf_revision or HfApi().dataset_info(HF_REPO_ID).sha
     snapshot_download(
         repo_id=HF_REPO_ID,
         repo_type="dataset",
@@ -131,8 +159,19 @@ def main() -> None:
         json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
+    pdf_status = {}
+    if args.pdf:
+        for d in doc_rows:
+            pdf_status[d["document_id"]] = download_pdf(
+                d["url"], args.out_dir / "src_pdf" / d["document_id"][:8] / "doc.pdf", d["n_pages"])
+        info["pdf_status"] = pdf_status
+        (args.out_dir / "DOWNLOAD_INFO.json").write_text(
+            json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
     for d in doc_rows:
-        print(f"  {d['document_id']}  {d['n_pages']:>3} trang  {d['n_questions']:>3} câu  {d['url']}")
+        pdf = f"  PDF: {pdf_status[d['document_id']]}" if args.pdf else ""
+        print(f"  {d['document_id']}  {d['n_pages']:>3} trang  {d['n_questions']:>3} câu  {d['url'][:70]}{pdf}")
     print(f"Xong: {len(doc_rows)} tài liệu, {len(qa_rows)} câu hỏi -> {args.out_dir}")
 
 
