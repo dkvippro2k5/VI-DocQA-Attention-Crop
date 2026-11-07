@@ -44,3 +44,9 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Ảnh chẩn đoán: font tải về, văn bản đệm
+data/diagnostic/fonts/
+data/diagnostic/corpus_*.jsonl
+# Ma trận attention/peak (lớn)
+results/**/*.npz
