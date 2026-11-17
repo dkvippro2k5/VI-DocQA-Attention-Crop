@@ -262,10 +262,10 @@ Báo cáo kết quả tách theo dạng đáp án; câu `list` chấm thêm đ�
 | Duyệt vòng 2 VisR-Bench tiếng Việt | Đang làm: 358/936 câu (304 đúng, 35 sửa, 19 bỏ). Bộ nhãn hiện có (`visr_bench_vi_v1.jsonl`) mới gồm 109 câu vòng 1 |
 | Chia dev/test VisR-Bench, gán `question_type` | Chưa làm, chờ duyệt xong vòng 2 |
 | B0 trên dev 4 bộ | Lượt đầu (409 câu) hỏng 6 câu do tràn số fp16 ở vision tower, sinh chuỗi "!!!!…". Đã tìm nguyên nhân và sửa (vision tower fp32, `src/vlm/qwen.py`); **cần chạy lại**. Lượt cũ giữ ở `results/B0_base/superseded_fp16_vision/` |
-| Chẩn đoán head EN/VI (C4, C5) | Lượt cũ cũng chạy vision tower fp16 nên **cần chạy lại** với fp32, rồi so danh sách expert head với lượt cũ (`results/C4_havc_en/`, `results/C5_havc_vi/superseded_fp16_vision/`). Code inference HAVC đã có |
+| Chẩn đoán head EN/VI (C4, C5) | Xong, chạy lại với vision tower fp32 (17/11/2026). Danh sách expert head **trùng hoàn toàn** với lượt fp16 (EN 35/35, VI 44/44, cùng thứ tự top-8); tỉ lệ đọc đúng token VI tăng nhẹ 99,17% → 99,46%, EN giữ 99,68%. Chi phí: 1,24–1,26 s/ảnh (gấp khoảng 2 lần fp16), VRAM đỉnh 6,66 GB. Code inference HAVC đã có |
 | Dữ liệu train C6/C7 | Đã tải ViInfographicVQA; đã soạn thư xin dữ liệu ([Thu_xin_du_lieu.md](Thu_xin_du_lieu.md)) |
 
-Việc tiếp theo: duyệt nốt 578 câu vòng 2 → gộp nhãn, chia dev/test, gán `question_type` → chạy lại chẩn đoán head và B0 với vision tower fp32 → B1, C3–C5, R trên dev.
+Việc tiếp theo: duyệt nốt 578 câu vòng 2 → gộp nhãn, chia dev/test, gán `question_type` → chạy lại B0 với vision tower fp32 → B1, C3–C5, R trên dev.
 
 ## 12. Rủi ro và phương án dự phòng
 
