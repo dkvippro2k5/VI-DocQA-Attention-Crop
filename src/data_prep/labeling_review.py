@@ -25,6 +25,10 @@ Tiến độ tự lưu trong trình duyệt (localStorage); "Xuất kết quả"
 Chạy từ gốc repo:
     python -X utf8 -m src.data_prep.labeling_review              # vòng 1
     python -X utf8 -m src.data_prep.labeling_review --round r2   # vòng 2
+    python -X utf8 -m src.data_prep.labeling_review --round audit  # duyệt lại câu nhãn người bị Codex gắn cờ
+Chế độ audit: mở với nhãn người hiện tại (khung đỏ); đề xuất Codex là khung xanh, nạp bằng nút hoặc phím G.
+Phím 1 = giữ đáp án (lưu khung đang hiển thị), 2 = sửa đáp án, 3 = bỏ câu. Xuất review_decisions_audit.json;
+các quyết định này dùng để thay quyết định cũ của cùng qid ở bước gộp nhãn.
 Ra: data/processed/visr_bench_vi/review/review_<vòng>.html (+ .xlsx), đã gitignore. Mỗi vòng có khóa localStorage và
 file xuất riêng (review_decisions_<vòng>.json) nên duyệt vòng sau không đè kết quả vòng trước.
 Vòng 2 không có đáp án Qwen để so; ưu tiên 1 thêm đáp án chỉ là dấu gạch (ô trống trong bảng).
@@ -100,6 +104,60 @@ def build_rows(rnd):
     return rows
 
 
+# ---- Duyệt lại nhãn người theo kết quả kiểm tra của Codex (--round audit)
+AUDIT_DIR = DATA / "codex_review_20261117"
+AUDIT_PRIO = {1: "Codex: chắc chắn sai", 2: "Codex: nghi ngờ / cần quyết định"}
+ERROR_NAME = {"A1_wrong_content": "sai nội dung", "A2_missing_items": "thiếu ý", "A3_not_answering": "không trả lời câu hỏi",
+              "A4_bad_bbox": "khung sai", "A5_wrong_keep_or_drop": "giữ/bỏ câu sai"}
+
+
+def build_audit_rows(audit_dir):
+    """Câu nhãn người bị Codex gắn cờ: lượt 02 (certain_error, doubt) và lượt thử 01 (khác checked_no_issue_found).
+
+    Trang mở với nhãn người hiện tại (khung đỏ); đề xuất của Codex là khung xanh, nạp bằng nút hoặc phím G.
+    """
+    human = {}  # qid -> nhãn người hiện tại (để lấy long_answer, drop_reason, note)
+    for r in load(audit_dir / "human_v1_to_audit.jsonl"):
+        human[r["qid"]] = {"long_answer": bool(r.get("long_answer")), "drop_reason": "", "note": r.get("review_note", "")}
+    for r in load(audit_dir / "human_r2_to_audit.jsonl"):
+        d = r.get("human_decision") or {}
+        human[r["qid"]] = {"long_answer": bool(d.get("long_answer")), "drop_reason": d.get("drop_reason", ""),
+                           "note": d.get("note", "")}
+    flagged = [(r, "run_02") for r in load(audit_dir / "run_02_human_audit.jsonl")
+               if r["status"] in ("certain_error", "doubt")]
+    flagged += [(r, "pilot_01") for r in load(audit_dir / "pilot_01_results.jsonl")
+                if r["audit_group"].startswith("human") and r["status"] != "checked_no_issue_found"]
+    rows = []
+    for r, src in flagged:
+        certain = r["status"] == "certain_error" or (src == "pilot_01" and r.get("risk") == "high"
+                                                     and r["status"] == "propose_change")
+        errs = r.get("error_types") or r.get("issue_types") or []
+        h = human.get(r["qid"], {})
+        img = (IN_DIR / r["image"]).resolve()
+        doc = r["document_id"][:8]
+        has_prop = "proposed_bbox" in r or "proposed_answer" in r
+        rows.append({
+            "prio": 1 if certain else 2,
+            "reasons": [f"{src}: {r['status']}"] + [ERROR_NAME.get(e, e) for e in errs],
+            "qid": r["qid"], "doc": DOC_NAME.get(doc, doc), "page": r["page_id"], "question": r["question"],
+            "answer": r.get("previous_answer") or "", "answerable": True, "evidence_type": "", "qwen": None,
+            "f1q": None, "workers": {}, "img_abs": img, "img": Path(os.path.relpath(img, OUT_DIR)).as_posix(),
+            "page_text": "", "document_id": r["document_id"], "image_rel": r["image"],
+            "audit": {
+                "source": src, "status": r["status"], "risk": r.get("risk"), "errors": errs,
+                "reason": r.get("reason", ""), "quote": r.get("evidence_quote", ""),
+                "prev_verdict": r.get("previous_verdict", ""), "prev_bbox": r.get("previous_bbox") or [],
+                "prev_mode": r.get("previous_bbox_mode") or "all", "prev_long": h.get("long_answer", False),
+                "prev_drop_reason": h.get("drop_reason", ""), "prev_note": h.get("note", ""),
+                "has_proposal": has_prop, "prop_verdict": r.get("proposed_verdict", ""),
+                "prop_answer": r.get("proposed_answer", ""), "prop_bbox": r.get("proposed_bbox") or [],
+                "prop_mode": r.get("proposed_bbox_mode") or "all",
+            },
+        })
+    rows.sort(key=lambda x: (x["prio"], x["doc"], x["page"], x["qid"]))
+    return rows
+
+
 HTML = r"""<!doctype html>
 <html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Duyệt nhãn VisR-Bench VI (/*ROUND*/)</title>
@@ -164,7 +222,7 @@ details pre { white-space:pre-wrap; font-size:13px; max-height:260px; overflow:a
       <div class="boxbar"><span>Khung bằng chứng: <b id="nbox">0</b></span>
         <button id="undoBox">Xóa khung cuối (X)</button><button id="clearBox">Xóa hết</button><button id="zoomPage" title="Thu ảnh để thấy cả trang (F)">Cả trang (F)</button><button id="zoomOut" title="Thu nhỏ (-)">−</button><span class="zoomLbl" id="zoomLbl"></span><button id="zoomIn" title="Phóng to (+); Z = bật/tắt 170%">+</button></div>
       <div class="boxbar" style="margin-top:6px"><span class="meta" id="sugg"></span><button id="resugg">Dò lại theo đáp án (G)</button></div>
-      <div class="meta">Khung xanh là gợi ý tự động, khung đỏ là vẽ tay. Bấm vào một khung để xóa; kéo chuột để vẽ thêm. Câu nhiều ý: một khung cho mỗi ý.</div>
+      <div class="meta" id="boxHint">Khung xanh là gợi ý tự động, khung đỏ là vẽ tay. Bấm vào một khung để xóa; kéo chuột để vẽ thêm. Câu nhiều ý: một khung cho mỗi ý.</div>
       <label style="margin-top:6px; color:var(--ink)"><input type="checkbox" id="alt"> Các khung là chỗ thay thế (A): mỗi khung tự nó đủ trả lời (đáp án lặp lại). Bỏ chọn nếu mỗi khung là một phần của đáp án.</label>
     </div>
     <div class="card">
@@ -322,7 +380,50 @@ function suggest(answer, it) {
 }
 const inSugg = (b) => sugg.boxes.some(s => s.join() === b.join());
 function showSugg() { $("sugg").textContent = `Gợi ý: ${sugg.boxes.length} khung (${sugg.how})`; }
-function resuggest() { sugg = suggest($("answer").value, ITEMS[view[cur]]); boxes = sugg.boxes.map(b => b.slice()); $("alt").checked = sugg.alt; showSugg(); drawBoxes(); }
+function resuggest() {
+  const it = ITEMS[view[cur]];
+  if (it.audit) { loadProposal(it); return; }
+  sugg = suggest($("answer").value, it); boxes = sugg.boxes.map(b => b.slice()); $("alt").checked = sugg.alt; showSugg(); drawBoxes();
+}
+
+// ---- chế độ duyệt lại theo Codex: khung đỏ = nhãn người hiện tại, khung xanh = đề xuất Codex
+const auditSugg = (A) => ({ boxes: A.prop_bbox.map(b => b.slice()), how: "khung xanh = đề xuất Codex", alt: A.prop_mode === "any" });
+function loadProposal(it) {
+  const A = it.audit;
+  if (!A.has_proposal) { say("Codex không đề xuất sửa câu này (chỉ nghi ngờ)."); return; }
+  if (A.prop_verdict === "bỏ câu") { boxes = []; say("Codex đề xuất bỏ câu: nếu đồng ý, chọn lý do rồi bấm 3."); }
+  else { boxes = A.prop_bbox.map(b => b.slice()); if (A.prop_answer) $("answer").value = A.prop_answer; $("alt").checked = A.prop_mode === "any"; say(""); }
+  drawBoxes(); showMeta();
+}
+function loadHuman(it) {
+  const A = it.audit;
+  boxes = A.prev_bbox.map(b => b.slice()); $("answer").value = it.answer; $("alt").checked = A.prev_mode === "any";
+  $("long").checked = !!A.prev_long; $("reason").value = A.prev_drop_reason || ""; say(""); drawBoxes(); showMeta();
+}
+function renderAudit(o, it) {
+  const A = it.audit;
+  line(o, "src", `Nhãn người hiện tại (${A.source === "pilot_01" ? "kiểm ở lượt thử 01" : "kiểm ở lượt 02"})`);
+  line(o, "other", `${A.prev_verdict || "?"}${A.prev_drop_reason ? ": " + A.prev_drop_reason : ""} · ${A.prev_bbox.length} khung (${A.prev_mode})`);
+  line(o, "src", `Codex: ${A.status}${A.risk ? " · mức " + A.risk : ""}${A.errors.length ? " · " + A.errors.join(", ") : ""}`);
+  line(o, "other", A.reason || "(không có lý do)");
+  if (A.quote) { line(o, "src", "Codex trích từ ảnh"); line(o, "other", A.quote); }
+  if (A.has_proposal) {
+    line(o, "src", "Đề xuất của Codex");
+    line(o, "other", `${A.prop_verdict || "sửa"} · ${A.prop_bbox.length} khung (${A.prop_mode})`);
+    if (A.prop_answer) line(o, "other", A.prop_answer);
+  }
+  const bar = document.createElement("div"); bar.className = "btns"; bar.style.marginTop = "8px";
+  const mk = (t, f) => { const b = document.createElement("button"); b.textContent = t; b.onclick = f; bar.appendChild(b); };
+  if (A.has_proposal) mk("Nạp đề xuất Codex (G)", () => loadProposal(it));
+  mk("Về nhãn người", () => loadHuman(it));
+  o.appendChild(bar);
+}
+if (ITEMS.some(x => x.audit)) {
+  $("bOk").textContent = "1 · Giữ đáp án"; $("bFix").textContent = "2 · Sửa đáp án";
+  $("resugg").textContent = "Nạp đề xuất Codex (G)";
+  $("boxHint").textContent = "Khung đỏ: nhãn người hiện tại (hoặc khung vẽ tay). Khung xanh: đề xuất Codex. Bấm vào một khung để xóa; kéo chuột để vẽ thêm. 1 lưu đúng các khung đang hiển thị.";
+  document.querySelector("header b").textContent = "Duyệt lại theo Codex";
+}
 
 // ---- khung bằng chứng: lưu theo pixel ảnh gốc, vẽ theo phần trăm nên không lệch khi phóng to
 function drawBoxes(tmp) {
@@ -421,20 +522,25 @@ const formOf = (s, tick) => s.split(";").filter(x => normToks(x).length).length 
   : (tick || normToks(s).length > 25 ? "long" : "short");
 function showMeta() {
   const it = ITEMS[view[cur]];
+  if (it.audit) {
+    $("answerMeta").textContent = `Nhãn người hiện tại: ${it.audit.prev_verdict} · đáp án đang có ${nWords($("answer").value)} từ · dạng (tự gán khi gộp): ${formOf($("answer").value, $("long").checked)}`;
+    return;
+  }
   $("answerMeta").textContent = `Gemini: ${it.answerable ? "trả lời được" : "KHÔNG trả lời được"} · bằng chứng: ${it.evidence_type} · đáp án đang có ${nWords($("answer").value)} từ · dạng (tự gán khi gộp): ${formOf($("answer").value, $("long").checked)}`;
 }
 let suggTimer = null;
 $("answer").addEventListener("input", () => {
   showMeta();
-  if (boxes.every(inSugg)) { clearTimeout(suggTimer); suggTimer = setTimeout(resuggest, 400); }  // chưa vẽ tay: dò lại theo đáp án mới
+  if (!ITEMS[view[cur]].audit && boxes.every(inSugg)) { clearTimeout(suggTimer); suggTimer = setTimeout(resuggest, 400); }  // chưa vẽ tay: dò lại theo đáp án mới
 });
 $("resugg").onclick = resuggest;
 function render() {
   if (!view.length) return;
   const it = ITEMS[view[cur]], d = dec[it.qid];
   $("pos").textContent = `Câu ${cur + 1}/${view.length}`;
-  sugg = suggest(d && d.verdict === "sửa" ? d.answer_final : (it.answer || it.qwen || ""), it);
-  boxes = d && d.evidence_bbox ? d.evidence_bbox.map(b => b.slice()) : sugg.boxes.map(b => b.slice());
+  const A = it.audit;
+  sugg = A ? auditSugg(A) : suggest(d && d.verdict === "sửa" ? d.answer_final : (it.answer || it.qwen || ""), it);
+  boxes = d && d.evidence_bbox ? d.evidence_bbox.map(b => b.slice()) : (A ? A.prev_bbox : sugg.boxes).map(b => b.slice());
   showSugg();
   if ($("img").getAttribute("src") !== it.img) { $("img").src = it.img; $("imgbox").scrollTop = 0; } else drawBoxes();
   $("where").textContent = `${it.doc} · trang ${it.page} · ${it.qid}`;
@@ -444,23 +550,25 @@ function render() {
   for (const r of it.reasons) { const s = document.createElement("span"); s.className = "tag"; s.textContent = r; tags.appendChild(s); }
   $("answer").value = d && d.verdict === "sửa" ? d.answer_final : it.answer;
   showMeta();
-  $("long").checked = !!(d && d.long_answer);
+  $("long").checked = d ? !!d.long_answer : !!(A && A.prev_long);
   showMeta();
-  $("alt").checked = d ? d.bbox_mode === "any" : sugg.alt;
-  $("note").value = d ? (d.note || "") : "";
-  $("reason").value = d && d.drop_reason ? d.drop_reason : "";
+  $("alt").checked = d ? d.bbox_mode === "any" : (A ? A.prev_mode === "any" : sugg.alt);
+  $("note").value = d ? (d.note || "") : (A ? A.prev_note || "" : "");
+  $("reason").value = d ? (d.drop_reason || "") : (A ? A.prev_drop_reason || "" : "");
   const st = $("state");
   if (!d) { st.className = "state"; st.textContent = "chưa duyệt"; }
   else if (!isDone(d)) { st.className = "state s-thiếu"; st.textContent = d.verdict + " (còn thiếu khung bằng chứng)"; }
   else { st.className = "state s-" + d.verdict.split(" ")[0]; st.textContent = d.verdict + (d.drop_reason ? ": " + d.drop_reason : ` · ${d.evidence_bbox.length} khung`); }
   say("");
   const o = $("others"); o.textContent = "";
+  if (A) { renderAudit(o, it); } else {
   line(o, "src", "Đáp án Qwen3-VL" + (it.f1q !== null ? ` (F1 với Gemini ${it.f1q})` : ""));
   line(o, "other", it.qwen || "(không có)");
   if (it.qwen) { const b = document.createElement("button"); b.textContent = "Dùng đáp án này"; b.style.marginTop = "4px";
     b.onclick = () => { $("answer").value = it.qwen; $("answer").focus(); }; o.appendChild(b); }
   const ws = Object.entries(it.workers);
   if (ws.length) { line(o, "src", "Đáp án các worker (batch hiệu chuẩn)"); for (const [a, v] of ws) line(o, "other", `${a}: ${v}`); }
+  }
   $("pageText").textContent = it.page_text || "(trống)";
   const n = ITEMS.filter(x => isDone(dec[x.qid])).length;
   $("done").textContent = `${n}/${ITEMS.length} xong`;
@@ -468,10 +576,10 @@ function render() {
 }
 function decide(verdict) {
   const it = ITEMS[view[cur]], txt = $("answer").value.trim(), img = $("img");
-  if (verdict === "đúng" && !it.answer) { say("Gemini không trả lời câu này: nếu trang có đáp án thì gõ vào ô và bấm Ctrl+Enter; nếu không thì chọn lý do và bấm 3."); return false; }
+  if (verdict === "đúng" && !it.answer) { say(it.audit ? "Nhãn người đang là bỏ câu: muốn giữ câu thì gõ đáp án (hoặc nạp đề xuất Codex) rồi bấm Ctrl+Enter; đồng ý bỏ thì bấm 3." : "Gemini không trả lời câu này: nếu trang có đáp án thì gõ vào ô và bấm Ctrl+Enter; nếu không thì chọn lý do và bấm 3."); return false; }
   if (verdict === "bỏ câu" && !$("reason").value) { say("Chọn lý do bỏ câu trước, rồi bấm 3 lại."); $("reason").focus(); return false; }
   if (verdict !== "bỏ câu" && !boxes.length) { say("Cần vẽ ít nhất một khung bằng chứng trên ảnh."); return false; }
-  if (verdict === "sửa" && (!txt || txt === it.answer)) { say("Sửa đáp án trong ô rồi bấm Ctrl+Enter."); $("answer").focus(); $("answer").select(); return false; }
+  if (verdict === "sửa" && (!txt || txt === it.answer)) { say(it.audit ? "Đáp án chưa đổi. Chỉ đổi khung thì bấm 1 (giữ đáp án, lưu khung đang hiển thị)." : "Sửa đáp án trong ô rồi bấm Ctrl+Enter."); $("answer").focus(); $("answer").select(); return false; }
   dec[it.qid] = { qid: it.qid, verdict,
                   answer_final: verdict === "bỏ câu" ? "" : (verdict === "đúng" ? it.answer : txt),
                   evidence_bbox: verdict === "bỏ câu" ? [] : boxes.map(b => b.slice()),
@@ -481,9 +589,18 @@ function decide(verdict) {
                   long_answer: verdict !== "bỏ câu" && $("long").checked,
                   bbox_mode: verdict === "bỏ câu" ? "" : ($("alt").checked && boxes.length > 1 ? "any" : "all"),
                   note: $("note").value.trim(), reviewed_at: new Date().toISOString() };
+  if (it.audit) Object.assign(dec[it.qid], { previous_verdict: it.audit.prev_verdict, audit_source: it.audit.source,
+                                             audit_status: it.audit.status });
   save(); return true;
 }
 function bboxSource() {
+  const it = ITEMS[view[cur]];
+  if (it.audit) {
+    const key = (bs) => bs.map(b => b.join()).sort().join("|");
+    if (key(boxes) === key(it.audit.prev_bbox)) return "giữ khung người";
+    if (it.audit.prop_bbox.length && key(boxes) === key(it.audit.prop_bbox)) return "đề xuất Codex";
+    return "sửa tay";
+  }
   const n = boxes.filter(inSugg).length;
   if (!n) return "vẽ tay";
   if (n < boxes.length) return "gợi ý + vẽ thêm";
@@ -553,12 +670,12 @@ render();
 """
 
 
-def write_html(rows, rnd):
+def write_html(rows, rnd, prio_name=PRIO_NAME):
     items = [{k: v for k, v in r.items() if k != "img_abs"} for r in rows]
     words = page_words([{"document_id": r["document_id"], "page_id": r["page"], "image": r["image_rel"]} for r in rows],
                        OUT_DIR / "page_words_ocr_cache.json")
     dump = lambda o: json.dumps(o, ensure_ascii=False).replace("</", "<\\/")
-    html = (HTML.replace("/*DATA*/", dump(items)).replace("/*PRIO*/", dump(PRIO_NAME))
+    html = (HTML.replace("/*DATA*/", dump(items)).replace("/*PRIO*/", dump(prio_name))
             .replace("/*REASONS*/", dump(DROP_REASONS)).replace("/*WORDS*/", dump(words)).replace("/*ROUND*/", rnd))
     out = OUT_DIR / f"review_{rnd}.html"
     out.write_text(html, encoding="utf-8")
@@ -602,8 +719,17 @@ def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument("--round", default="v1", choices=sorted(ROUNDS))
-    rnd = ap.parse_args().round
+    ap.add_argument("--round", default="v1", choices=sorted(ROUNDS) + ["audit"])
+    ap.add_argument("--audit-dir", type=Path, default=AUDIT_DIR, help="thư mục kết quả kiểm tra của Codex")
+    args = ap.parse_args()
+    rnd = args.round
+    if rnd == "audit":
+        rows = build_audit_rows(args.audit_dir)
+        html = write_html(rows, rnd, AUDIT_PRIO)
+        print(f"Trang duyệt lại: {html}")
+        for p, name in AUDIT_PRIO.items():
+            print(f"  {name}: {sum(r['prio'] == p for r in rows)} câu")
+        return
     rows = build_rows(rnd)
     html = write_html(rows, rnd)
     xlsx = write_xlsx(rows, rnd)
