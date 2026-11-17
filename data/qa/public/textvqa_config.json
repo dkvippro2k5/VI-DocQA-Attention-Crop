@@ -1,0 +1,9 @@
+{
+  "dataset": "textvqa",
+  "seed": 20261115,
+  "n_dev": 100,
+  "n_test": 500,
+  "n_groups_total": 3166,
+  "n_questions_total": 5000,
+  "group_by": "image"
+}

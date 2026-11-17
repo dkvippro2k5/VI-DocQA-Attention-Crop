@@ -33,6 +33,14 @@ def normalize(s: str) -> str:
     return " ".join(t for t in toks if t)
 
 
+def strip_diacritics(s: str) -> str:
+    """Bỏ dấu tiếng Việt (dấu thanh và dấu mũ/móc, đ -> d). CHỈ dùng cho điểm phân tích "bỏ dấu"
+    (đo phần lỗi do dấu), không dùng cho chỉ số chính."""
+    s = unicodedata.normalize("NFD", s)
+    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+    return unicodedata.normalize("NFC", s).replace("đ", "d").replace("Đ", "D")
+
+
 LONG_WORDS = 25
 
 

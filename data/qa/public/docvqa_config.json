@@ -1,0 +1,9 @@
+{
+  "dataset": "docvqa",
+  "seed": 20261115,
+  "n_dev": 100,
+  "n_test": 500,
+  "n_groups_total": 938,
+  "n_questions_total": 5349,
+  "group_by": "ucsf_document_id"
+}
