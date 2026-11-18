@@ -33,7 +33,7 @@
 
 - **Chuẩn hóa Unicode NFC** cho câu hỏi, đáp án, output OCR/VLM trước khi so sánh hoặc tính EM/F1. Dấu thanh có thể ở dạng tổ hợp (NFD) và làm sai metric.
 - Không bỏ dấu khi chuẩn hóa; dấu là đối tượng nghiên cứu.
-- Trường dữ liệu Q&A: `document_id`, `page_id`, `image`, `question`, `answer`, `evidence_bbox`, `question_type` (`small_detail` / `diacritic` / `table` / `text`), `split`.
+- Trường dữ liệu Q&A: `document_id`, `page_id`, `image`, `question`, `answer`, `evidence_bbox`, `question_type` (`small_detail` / `table` / `text`, gán bằng luật ở scope mục 9), `has_diacritic`, `split`.
 - PDF/ảnh gốc, ảnh chẩn đoán và bộ dữ liệu tải về (`data/raw/`) không commit (xem `.gitignore`); chỉ commit file Q&A json/csv ở `data/qa/`.
 - Không bỏ dấu khi chuẩn hóa không có nghĩa là không chấm bỏ dấu: điểm bỏ dấu được báo cáo thêm như một phép phân tích lỗi do dấu, không thay chỉ số chính.
 

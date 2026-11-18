@@ -158,7 +158,7 @@ Mục này được ghi trước khi có kết quả dev của bất kỳ nhánh
 | **Tiếng Việt** | ViTextVQA (tập test) | **VisR-Bench tiếng Việt** (tự xây, có bbox) |
 
 - **Ba bộ công khai:** lấy ngẫu nhiên với seed cố định, gồm khoảng 100 câu dev và 500 câu test mỗi bộ, không trùng ảnh giữa dev và test.
-- **VisR-Bench tiếng Việt:** 1.045 câu trên 23 tài liệu. Chia dev/test theo `document_id`; tỉ lệ đề xuất khoảng 30/70, chốt và ghi lại trước khi chạy nhánh nào.
+- **VisR-Bench tiếng Việt:** 1.045 câu trên 23 tài liệu. Chia dev/test theo `document_id`; tỉ lệ đề xuất khoảng 30/70, chốt và ghi lại trước khi chạy nhánh nào. Vì số câu lệch mạnh giữa các tài liệu, cách gán tài liệu vào dev/test được chọn (seed cố định) để phân bố `question_type`, dạng đáp án và cờ dấu ở hai phần gần nhau, và không để một tài liệu chiếm quá nửa test; chỉ dùng nhãn, không dùng kết quả model.
 - So sánh giữa các ô dựa trên **mức chênh trước và sau can thiệp** trong cùng một bộ, không so điểm tuyệt đối giữa các bộ. Lý do: Qwen2.5-VL có thể đã học tập train của TextVQA/DocVQA.
 
 ### 7.2. Train cho C6, C7
@@ -179,7 +179,7 @@ Khoảng 1.000 ảnh tiếng Anh và 1.000 ảnh tiếng Việt, tự sinh, dùn
 ### 7.4. Quy định chung
 
 - **Chia theo tài liệu:** không tài liệu nào xuất hiện ở cả dev và test. Tài liệu dev/test không bao giờ dùng để train.
-- **Trường dữ liệu:** `document_id`, `page_id`, `image`, `question`, `answer`, `evidence_bbox`, `question_type` (small_detail / diacritic / table / text), `split`.
+- **Trường dữ liệu:** `document_id`, `page_id`, `image`, `question`, `answer`, `evidence_bbox`, `question_type` (small_detail / table / text, gán bằng luật ở mục 9), `has_diacritic`, `split`.
 - **Quy trình tạo (VisR-Bench tiếng Việt):** câu hỏi gốc của VisR-Bench → VLM mạnh sinh nháp đáp án + bbox → người duyệt 100% (vòng 1: 109 câu; vòng 2: 936 câu).
 - **Kiểm tra chất lượng:** 2 người gán độc lập trên ≥20% test, báo cáo Cohen's κ (đáp án) và IoU (bbox).
 
@@ -224,6 +224,34 @@ Lưu ý kỹ thuật:
 - `short`: còn lại.
 
 Báo cáo kết quả tách theo dạng đáp án; câu `list` chấm thêm độ phủ theo ý (`item_cover`). Phân tích chính của RQ2 (crop) dựa trên nhóm `short`, vì đáp án dài trải trên vùng lớn mà crop không nhắm tới.
+
+**Trục độ khó và `question_type` (VisR-Bench tiếng Việt; chốt 18/11/2026, trước khi chạy bất kỳ nhánh nào trên dev):**
+
+Câu hỏi lấy từ VisR-Bench, không được soạn theo mức độ khó, nên độ khó được tính sau từ nhãn đã duyệt (bbox, đáp án, kích thước ảnh), không gán tay. Các trục chỉ dùng để chia nhóm khi báo cáo và để cân dev/test; không dùng để chọn prompt, cấu hình hay nhánh.
+
+| Trục | Cách tính | Nhóm | Áp dụng |
+|---|---|---|---|
+| Kích thước đích | Diện tích vùng bằng chứng / diện tích trang. `bbox_mode = "all"`: hộp bao các khung; `"any"`: khung nhỏ nhất | nhỏ < 0,5% · vừa 0,5–5% · lớn > 5% | Mọi câu; phân tích chính trên `short` |
+| Độ phân giải hiệu dụng | Chiều cao khung thấp nhất × s, với s = min(1, √(`max_pixels` / (W·H))), `max_pixels` = 1024·28·28. Xấp xỉ chiều cao một dòng chữ trong ảnh model nhận (có lẫn phần đệm của khung) | thấp < 15 px · vừa 15–25 px · cao > 25 px | Chỉ `short` |
+| Dấu | Đáp án có ít nhất một ký tự mang dấu tiếng Việt (dấu thanh, dấu mũ/móc, đ) | có / không | Mọi câu |
+| Loại bằng chứng | `evidence_type` của nháp Gemini; các câu `table` được kiểm tay trên ảnh trước khi chốt | text · table · figure | Mọi câu |
+| Dạng đáp án | `answer_form` (mục trên) | short · list · long | Mọi câu |
+
+Lý do chọn trục: kích thước đích là trục ViCrop dùng để chỉ ra MLLM kém với chi tiết nhỏ (*ngưỡng cụ thể của ViCrop chưa đối chiếu*), nên kết quả tiếng Việt so được với phát hiện gốc. Độ phân giải hiệu dụng đo trực tiếp hệ quả của việc thu ảnh: trang trung vị 3,9 MP bị thu về khoảng 0,8 MP, một token ảnh của Qwen2.5-VL phủ 28 px, trong khi dấu thanh chỉ cao vài pixel.
+
+`question_type` gán bằng luật, theo thứ tự ưu tiên, mỗi câu một nhãn:
+1. `table`: loại bằng chứng là bảng (đã kiểm tay);
+2. `small_detail`: còn lại, dạng `short`, kích thước đích nhỏ (< 0,5%);
+3. `text`: còn lại.
+
+`diacritic` không còn là một giá trị của `question_type` mà thành cờ `has_diacritic` (trục "Dấu"). Lý do: 83% đáp án `short` hiện có mang dấu (183/221), nên làm một loại riêng không tách được nhóm nào. Lỗi do dấu được đo trên mọi câu bằng chênh lệch điểm giữ dấu – bỏ dấu (bảng chỉ số ở trên).
+
+Phân bố trên 418 câu đã duyệt (17/11/2026, để tham khảo; tính lại khi có bộ nhãn cuối): `short` 221 câu, trong đó 82 câu kích thước đích nhỏ; độ phân giải hiệu dụng thấp / vừa / cao = 37 / 88 / 96 câu; loại bằng chứng text 335, table 64, figure 10.
+
+Giới hạn cần nêu trong báo cáo:
+- Gần như không có câu hỏi về hình (10 câu): dataset mô tả là "trang tài liệu dày chữ và bảng", không phải tài liệu chứa hình. Nhóm figure chỉ báo cáo mô tả, không kiểm định.
+- Ít tài liệu và lệch: 23 tài liệu, 5 tài liệu lớn nhất chiếm 69% số câu. Khoảng tin cậy báo cáo thêm bằng bootstrap theo tài liệu (`src/eval/stats.py`); báo cáo cả kết quả khi bỏ từng tài liệu lớn (leave-one-document-out) cho so sánh chính.
+- Nhóm có dưới 30 câu ở test chỉ báo cáo mô tả, không kiểm định riêng.
 
 **Kiểm định thống kê:**
 - So sánh ghép cặp giữa các nhánh trên cùng câu hỏi bằng **McNemar** (đúng/sai) và **paired bootstrap** (F1, LLM-judge), báo cáo khoảng tin cậy 95%.
