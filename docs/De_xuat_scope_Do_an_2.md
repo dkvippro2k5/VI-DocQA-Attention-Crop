@@ -8,7 +8,7 @@
 
 **Thời lượng:** 1 học kỳ (~14 tuần)
 
-**Tài nguyên:** GPU T4 16GB free (Google Colab / Kaggle), API cho LLM-judge và sinh nháp dữ liệu
+**Tài nguyên:** GPU T4 16GB free (Google Colab / Kaggle); LLM-judge chạy cục bộ trên Kaggle (`llama.cpp`); API cho sinh nháp dữ liệu
 
 **Tài liệu liên quan:** [Related_work_References.md](Related_work_References.md), [Giai_dap_gop_y_GVHD_tuan_4.md](Giai_dap_gop_y_GVHD_tuan_4.md), [Nguon_du_lieu_tieng_Viet.md](Nguon_du_lieu_tieng_Viet.md)
 
@@ -102,6 +102,8 @@ Tất cả nhánh chạy trên **cùng tập test, cùng câu hỏi, cùng promp
   - C6 vs C5;
   - mức chênh của từng can thiệp giữa 4 ô của thiết kế 2 × 2.
 - Mọi siêu tham số (của crop và của LoRA) chọn trên **dev**, không chọn trên test.
+- Mỗi nhánh chọn **một cấu hình chung cho cả 4 bộ** trên dev gộp (khoảng 1.150 câu), không chọn riêng từng bộ: 300 câu dev mỗi bộ vẫn quá ít để phân biệt các cấu hình chênh nhau vài điểm, và thiết kế 2 × 2 so mức chênh của *cùng một* can thiệp giữa các ô (chốt 18/11/2026).
+- **Chỉ số chính** cho so sánh chính và cho quy tắc mở rộng (mục 6.1): tỉ lệ đúng theo LLM-judge có đáp án chuẩn, trên nhóm `short` của VisR-Bench tiếng Việt; EM, F1, tỉ lệ chứa đáp án báo cáo kèm (sửa đổi 18/11/2026, lý do ở mục 6.1).
 
 **Chẩn đoán head (dùng cho C4, C5, C6):** theo quy trình HAVC. Đưa ảnh chữ vào VLM; khi model đọc đúng thì ghi vị trí đỉnh attention của từng head; giữ head có điểm trùng vùng chữ ≥ ngưỡng; rồi lọc bằng entropy không gian và độ nhạy gradient. Siêu tham số theo paper: K = 8, ngưỡng 0,5, α = 0,4, τ = 0,1; tinh chỉnh trên dev.
 - C4: ảnh chữ tiếng Anh (như paper).
@@ -121,12 +123,21 @@ Mục này được ghi trước khi có kết quả dev của bất kỳ nhánh
 - Chỉ chạy trên VisR-Bench tiếng Việt (bộ duy nhất có bbox đáp án). Chạy trên dev để ra quyết định; chạy trên test như một dòng tham chiếu, không đưa vào kiểm định giả thuyết.
 - O dùng nhãn nên là trần trên của mọi cách crop cùng kích thước, không phải kết quả của ĐA2.
 
-**Đại lượng dùng để quyết định** (VisR-Bench tiếng Việt, dev, nhóm `short`, EM):
-- Δ_O = EM(O) − EM(B1a), với B1a là baseline tăng `max_pixels` cân số token ảnh;
-- Δ_best = max(EM(C3), EM(C4), EM(C5)) − EM(B1a).
+**Đại lượng dùng để quyết định** (VisR-Bench tiếng Việt, dev, nhóm `short`, tỉ lệ đúng theo LLM-judge, ký hiệu J):
+- Δ_O = J(O) − J(B1a), với B1a là baseline tăng `max_pixels` cân số token ảnh;
+- Δ_best = max(J(C3), J(C4), J(C5)) − J(B1a).
+
+*Sửa đổi 18/11/2026 (EM → LLM-judge).* Bản ghi ngày 17/11 dùng EM. Kết quả B0 trên dev cho thấy EM không đo được việc đọc đúng trên bộ này: với cùng prompt p2, model trả lời dài hơn đáp án chuẩn ở tiếng Việt (VisR `short`: trung vị 15 từ so với 6 từ của đáp án; 35% câu dài hơn 3 lần), nên EM chỉ 13,7% trong khi 50,6% câu trả lời chứa đáp án (DocVQA: EM 81, chứa 83). Khi đó Δ theo EM chủ yếu đo việc crop có làm model trả lời ngắn lại hay không. Tỉ lệ chứa đáp án cũng không dùng được vì tính đúng cả câu trả lời sai có lẫn chuỗi đáp án. Sửa đổi được ghi khi mới có kết quả B0 trên dev, **trước khi có kết quả dev của B1, O hay bất kỳ nhánh crop nào**; ngưỡng X, Y và bảng quy tắc giữ nguyên. LLM-judge chỉ được dùng khi Cohen's κ với người chấm trên 50 câu `short` của dev (seed cố định) đạt ≥ 0,6; nhãn người được duyệt từng câu từ đề xuất của Codex (chấm chỉ từ chữ, không thấy judge), báo cáo kèm số câu người sửa đề xuất và κ judge – Codex; không đạt thì quay về EM và ghi rõ trong báo cáo. Prompt sinh đáp án p2 giữ nguyên.
+
+*Judge cụ thể (chốt 18/11/2026, trước khi chạy judge trên bất kỳ nhánh nào).* Gemini API gói miễn phí chỉ cho 20 lượt/ngày, không đủ cho khoảng 20–30 nghìn lượt chấm, nên judge chạy cục bộ trên Kaggle bằng `llama.cpp` (`notebooks/judge_local.ipynb`, `src/eval/judge.py`; prompt `j1`, temperature 0, đầu ra JSON giới hạn bằng schema, tắt chế độ suy nghĩ; judge không xem ảnh). Trọng số cố định nên tái lập được; phiên bản llama.cpp (commit) được ghi cùng kết quả.
+- Judge chính: Qwen3.8-27B, GGUF `UD-Q4_K_M` (`unsloth/Qwen3.8-27B-GGUF`), chia layer qua 2 T4. Cách xa Qwen2.5 của model đang được chấm nhiều thế hệ.
+- Judge đối chứng: Gemma 4 12B-it, GGUF QAT `q4_0` của Google (`google/gemma-4-12B-it-qat-q4_0-gguf`), khác họ; chấm 50 câu mẫu để báo cáo κ giữa hai judge và kiểm thiên vị của judge Qwen.
+- Quy tắc chọn: Qwen3.8-27B là judge chính nếu chấm ≤ 2 giây/câu trên 50 câu mẫu; chậm hơn thì đổi vai cho Gemma 4 12B. Judge được chọn vẫn phải đạt κ ≥ 0,6. Không chọn judge theo κ.
+- Mốc so sánh báo cáo kèm: luật "câu trả lời chứa đáp án chuẩn" (κ = 0,72 với nhãn người trên 50 câu mẫu). Judge LLM không vượt mốc này thì ghi rõ trong báo cáo.
+- Đã loại: Granite 4.2 8B (tiếng Việt không có trong danh sách ngôn ngữ đã kiểm thử), UniRRM-14B (reward model tự sinh tiêu chí và chấm thang 1–5, sinh hàng nghìn token mỗi câu, không hợp chấm đúng/sai theo đáp án).
 
 **Ngưỡng: Y = 8 điểm %, X = 4 điểm %.**
-- Dev dự kiến có khoảng 140–150 câu `short` (khoảng 30% của ~900 câu giữ lại, ~53% là `short` theo bộ nhãn hiện có). Với 15–20% câu đổi kết quả giữa hai cấu hình, sai số chuẩn của hiệu ghép cặp khoảng 3,5 điểm %. Y = 8 điểm là khoảng 2,3 lần sai số chuẩn, và lớn hơn mức chênh test phát hiện được (6–7 điểm với 300 câu, mục 9). Dưới mức này, khoảng trống của cả họ phương pháp crop không đủ lớn để một nhánh mới có cơ hội cho kết quả kiểm định được trên test.
+- Dev có 168 câu `short` (bộ nhãn cuối, 18/11/2026; bản ghi 17/11 dự kiến 140–150). Với 15–20% câu đổi kết quả giữa hai cấu hình, sai số chuẩn của hiệu ghép cặp khoảng 3–3,5 điểm %. Y = 8 điểm là khoảng 2,3–2,7 lần sai số chuẩn, và lớn hơn mức chênh test phát hiện được (khoảng 4,5–6,4 điểm với 387 câu `short` ở test, mục 7.1). Dưới mức này, khoảng trống của cả họ phương pháp crop không đủ lớn để một nhánh mới có cơ hội cho kết quả kiểm định được trên test.
 - X = 4 điểm = Y/2: các nhánh crop theo attention lấy được dưới một nửa mức trần.
 
 **Quy tắc:**
@@ -157,8 +168,13 @@ Mục này được ghi trước khi có kết quả dev của bất kỳ nhánh
 | **Tiếng Anh** | TextVQA (tập validation) | DocVQA (tập validation) |
 | **Tiếng Việt** | ViTextVQA (tập test) | **VisR-Bench tiếng Việt** (tự xây, có bbox) |
 
-- **Ba bộ công khai:** lấy ngẫu nhiên với seed cố định, gồm khoảng 100 câu dev và 500 câu test mỗi bộ, không trùng ảnh giữa dev và test.
-- **VisR-Bench tiếng Việt:** 1.045 câu trên 23 tài liệu. Chia dev/test theo `document_id`; tỉ lệ đề xuất khoảng 30/70, chốt và ghi lại trước khi chạy nhánh nào. Vì số câu lệch mạnh giữa các tài liệu, cách gán tài liệu vào dev/test được chọn (seed cố định) để phân bố `question_type`, dạng đáp án và cờ dấu ở hai phần gần nhau, và không để một tài liệu chiếm quá nửa test; chỉ dùng nhãn, không dùng kết quả model.
+- **Ba bộ công khai:** lấy ngẫu nhiên với seed cố định, gồm 300 câu dev và 500 câu test mỗi bộ, không trùng ảnh/tài liệu giữa dev và test. Ban đầu dev có 100 câu; ngày 18/11/2026 (mới chạy B0, chưa chạy nhánh nào khác) thêm 200 câu dev mỗi bộ, lấy từ các nhóm ngay sau 600 nhóm đầu của cùng thứ tự xáo, nên 500 câu test và 100 câu dev cũ giữ nguyên từng câu (`dev_batch` = `orig` / `ext1`). Lý do: với 100 câu, chênh lệch nhỏ nhất giữa hai nhánh phát hiện được là khoảng 9–12 điểm; 300 câu còn khoảng 5–7 điểm.
+- **VisR-Bench tiếng Việt:** 831 câu trên 19 tài liệu, 320 trang (bộ nhãn cuối sau hai vòng duyệt, 18/11/2026). Chia dev/test theo `document_id`, khoảng 30/70, chốt và ghi lại trước khi chạy nhánh nào. Quy tắc (script `src/data_prep/split_visr.py`):
+  - duyệt hết 2^19 cách gán tài liệu vào dev, nên kết quả tất định, không cần seed;
+  - ràng buộc: phần dev 27–33% số câu (chia theo tài liệu nên không đạt đúng 30%); dev ít nhất 5 tài liệu; không tài liệu nào chiếm quá nửa test;
+  - trong các cách thỏa ràng buộc, chọn cách có tổng khoảng cách biến phân toàn phần (TVD) giữa dev và test nhỏ nhất trên ba phân bố: `question_type`, dạng đáp án, cờ dấu; hòa thì lấy cách có phần dev gần 30% hơn;
+  - chỉ dùng nhãn, không dùng kết quả model. Chạy một lần sau khi loại bằng chứng đã chốt; cấu hình, phân bố hai phần và 10 cách gán tốt nhất lưu ở `data/qa/visr_bench_vi_v2_split.json`.
+  - Lý do chọn 30/70: dev cần đủ câu `short` cho quy tắc mở rộng (mục 6.1; với khoảng 166 câu, sai số chuẩn của Δ_O khoảng 4 điểm, nên Y = 8 xấp xỉ 2 lần sai số chuẩn) và để chọn siêu tham số LoRA. Hạ dev xuống 20% chỉ làm test nhạy hơn khoảng 0,3–0,5 điểm, còn nâng lên 50% làm test kém nhạy hơn khoảng 1 điểm (McNemar, α = 0,05, power 80%). Với khoảng 390 câu `short` ở test, độ lệch nhỏ nhất C5 – C4 phát hiện được là khoảng 4,5–6,4 điểm (tùy tỉ lệ câu bất đồng giữa hai nhánh, 10–20%); đây là giới hạn của bộ dữ liệu, ghi vào báo cáo.
 - So sánh giữa các ô dựa trên **mức chênh trước và sau can thiệp** trong cùng một bộ, không so điểm tuyệt đối giữa các bộ. Lý do: Qwen2.5-VL có thể đã học tập train của TextVQA/DocVQA.
 
 ### 7.2. Train cho C6, C7
@@ -190,7 +206,7 @@ Khoảng 1.000 ảnh tiếng Anh và 1.000 ảnh tiếng Việt, tự sinh, dùn
 | VLM | Qwen2.5-VL-3B (chính); Vintern-1B (baseline tham khảo) |
 | Can thiệp crop | Code ViCrop ([mllms_know](https://github.com/saccharomycetes/mllms_know), MIT, đã hỗ trợ Qwen2.5-VL); HAVC **tự cài đặt** trên nền code ViCrop (paper không công bố code) |
 | LoRA | PEFT; QLoRA 4-bit nếu thiếu VRAM; chỉ cập nhật adapter |
-| Đánh giá | EM, F1, LLM-judge qua API |
+| Đánh giá | EM, F1, LLM-judge cục bộ (`llama.cpp` trên Kaggle) |
 
 Lưu ý kỹ thuật:
 - Lấy attention cần chế độ eager attention; T4 không hỗ trợ bf16 gốc và FlashAttention-2, nên dùng fp16 và giới hạn `max_pixels`.
@@ -234,13 +250,13 @@ Câu hỏi lấy từ VisR-Bench, không được soạn theo mức độ khó, 
 | Kích thước đích | Diện tích vùng bằng chứng / diện tích trang. `bbox_mode = "all"`: hộp bao các khung; `"any"`: khung nhỏ nhất | nhỏ < 0,5% · vừa 0,5–5% · lớn > 5% | Mọi câu; phân tích chính trên `short` |
 | Độ phân giải hiệu dụng | Chiều cao khung thấp nhất × s, với s = min(1, √(`max_pixels` / (W·H))), `max_pixels` = 1024·28·28. Xấp xỉ chiều cao một dòng chữ trong ảnh model nhận (có lẫn phần đệm của khung) | thấp < 15 px · vừa 15–25 px · cao > 25 px | Chỉ `short` |
 | Dấu | Đáp án có ít nhất một ký tự mang dấu tiếng Việt (dấu thanh, dấu mũ/móc, đ) | có / không | Mọi câu |
-| Loại bằng chứng | `evidence_type` của nháp Gemini; các câu `table` được kiểm tay trên ảnh trước khi chốt | text · table · figure | Mọi câu |
+| Loại bằng chứng | `evidence_type` của nháp Gemini; các câu `table` và các câu Gemini bỏ trống được Codex kiểm trên ảnh, người duyệt các câu Codex không đồng ý với Gemini hoặc không chắc | text · table · figure | Mọi câu |
 | Dạng đáp án | `answer_form` (mục trên) | short · list · long | Mọi câu |
 
 Lý do chọn trục: kích thước đích là trục ViCrop dùng để chỉ ra MLLM kém với chi tiết nhỏ (*ngưỡng cụ thể của ViCrop chưa đối chiếu*), nên kết quả tiếng Việt so được với phát hiện gốc. Độ phân giải hiệu dụng đo trực tiếp hệ quả của việc thu ảnh: trang trung vị 3,9 MP bị thu về khoảng 0,8 MP, một token ảnh của Qwen2.5-VL phủ 28 px, trong khi dấu thanh chỉ cao vài pixel.
 
 `question_type` gán bằng luật, theo thứ tự ưu tiên, mỗi câu một nhãn:
-1. `table`: loại bằng chứng là bảng (đã kiểm tay);
+1. `table`: loại bằng chứng là bảng (đã kiểm như trên);
 2. `small_detail`: còn lại, dạng `short`, kích thước đích nhỏ (< 0,5%);
 3. `text`: còn lại.
 
@@ -249,14 +265,14 @@ Lý do chọn trục: kích thước đích là trục ViCrop dùng để chỉ 
 Phân bố trên 418 câu đã duyệt (17/11/2026, để tham khảo; tính lại khi có bộ nhãn cuối): `short` 221 câu, trong đó 82 câu kích thước đích nhỏ; độ phân giải hiệu dụng thấp / vừa / cao = 37 / 88 / 96 câu; loại bằng chứng text 335, table 64, figure 10.
 
 Giới hạn cần nêu trong báo cáo:
-- Gần như không có câu hỏi về hình (10 câu): dataset mô tả là "trang tài liệu dày chữ và bảng", không phải tài liệu chứa hình. Nhóm figure chỉ báo cáo mô tả, không kiểm định.
-- Ít tài liệu và lệch: 23 tài liệu, 5 tài liệu lớn nhất chiếm 69% số câu. Khoảng tin cậy báo cáo thêm bằng bootstrap theo tài liệu (`src/eval/stats.py`); báo cáo cả kết quả khi bỏ từng tài liệu lớn (leave-one-document-out) cho so sánh chính.
+- Ít câu hỏi về hình (39/831 câu figure, 5 câu ở dev): dataset mô tả là "trang tài liệu dày chữ và bảng", không phải tài liệu chứa hình. Nhóm figure chỉ báo cáo mô tả, không kiểm định.
+- Ít tài liệu và lệch: 19 tài liệu, 5 tài liệu lớn nhất chiếm 64% số câu. Khoảng tin cậy báo cáo thêm bằng bootstrap theo tài liệu (`src/eval/stats.py`); báo cáo cả kết quả khi bỏ từng tài liệu lớn (leave-one-document-out) cho so sánh chính.
 - Nhóm có dưới 30 câu ở test chỉ báo cáo mô tả, không kiểm định riêng.
 
 **Kiểm định thống kê:**
 - So sánh ghép cặp giữa các nhánh trên cùng câu hỏi bằng **McNemar** (đúng/sai) và **paired bootstrap** (F1, LLM-judge), báo cáo khoảng tin cậy 95%.
 - So sánh chính (C5 vs C4) khai báo trước; các so sánh phụ hiệu chỉnh **Holm**.
-- Ước lượng sơ bộ: với ~15–20% câu đổi kết quả giữa hai cấu hình, 300 câu phát hiện được chênh lệch khoảng 6–7 điểm %; 5 điểm % cần ~470 câu. Tính lại sau pilot.
+- Ước lượng (power 80%, α = 0,05): với 10–20% câu đổi kết quả giữa hai cấu hình, 387 câu `short` ở test VisR phát hiện được chênh lệch khoảng 4,5–6,4 điểm %; 500 câu test mỗi bộ công khai khoảng 4,0–5,6 điểm %.
 
 ## 10. Đóng góp dự kiến
 
@@ -279,21 +295,21 @@ Giới hạn cần nêu trong báo cáo:
 | 13 | Viết báo cáo | Báo cáo |
 | 14 | Chuẩn bị bảo vệ | Đồ án hoàn chỉnh |
 
-**Tiến độ đến 17/11/2026 (tuần 5–6):**
+**Tiến độ đến 18/11/2026 (tuần 5–6):**
 
 | Việc | Trạng thái |
 |---|---|
-| Lấy mẫu 3 bộ công khai (`src/data_prep/sample_public.py`) | Xong: TextVQA, DocVQA, ViTextVQA, mỗi bộ 100 dev + 500 test, một câu mỗi ảnh/tài liệu, dev và test không chung ảnh/tài liệu |
-| Bộ đọc chung 4 bộ đánh giá (`src/data_prep/eval_sets.py`) | Xong. VisR-Bench tiếng Việt chưa chia nên mang nhãn `pilot`, chỉ dùng chạy thử |
+| Lấy mẫu 3 bộ công khai (`src/data_prep/sample_public.py`) | Xong: TextVQA, DocVQA, ViTextVQA, mỗi bộ 300 dev (100 ban đầu + 200 thêm ngày 18/11) + 500 test, một câu mỗi ảnh/tài liệu, dev và test không chung ảnh/tài liệu |
+| Bộ đọc chung 4 bộ đánh giá (`src/data_prep/eval_sets.py`) | Xong; VisR-Bench đọc từ `visr_bench_vi_v2.jsonl`, kèm các trục độ khó |
 | Script kiểm định (`src/eval/stats.py`) | Xong: McNemar chính xác, paired bootstrap (theo câu và theo tài liệu), Holm cho so sánh phụ |
 | Prompt sinh đáp án p2, dạng đáp án, `item_cover` | Xong (mục 9) |
-| Duyệt vòng 2 VisR-Bench tiếng Việt | Đang làm: 358/936 câu (304 đúng, 35 sửa, 19 bỏ). Bộ nhãn hiện có (`visr_bench_vi_v1.jsonl`) mới gồm 109 câu vòng 1 |
-| Chia dev/test VisR-Bench, gán `question_type` | Chưa làm, chờ duyệt xong vòng 2 |
-| B0 trên dev 4 bộ | Lượt đầu (409 câu) hỏng 6 câu do tràn số fp16 ở vision tower, sinh chuỗi "!!!!…". Đã tìm nguyên nhân và sửa (vision tower fp32, `src/vlm/qwen.py`); **cần chạy lại**. Lượt cũ giữ ở `results/B0_base/superseded_fp16_vision/` |
+| Duyệt vòng 2 VisR-Bench tiếng Việt | Xong (18/11/2026): duyệt tay đủ 936 câu (Codex kiểm và đề xuất, người quyết định từng câu); giữ 831 câu (769 đúng, 62 sửa), bỏ 105 câu (46 cần nhiều trang, 29 trang không có đáp án, 28 câu hỏi mơ hồ, 1 đáp án ở trang khác, 1 lý do khác) |
+| Chia dev/test VisR-Bench, gán `question_type` | Xong (18/11/2026), `data/qa/visr_bench_vi_v2.jsonl`: dev 251 câu (30,2%, 8 tài liệu), test 580 câu (11 tài liệu); `question_type` small_detail / table / text = 29 / 46 / 176 (dev) và 64 / 106 / 410 (test); tổng TVD 0,010. Loại bằng chứng: Codex kiểm 187 câu, người duyệt 55 câu |
+| B0 trên dev 4 bộ | Chạy lại với vision tower fp32 (18/11/2026): hết 6 câu suy biến, điểm không giảm (`results/B0_base/README.md`). Xong cả 4 bộ dev (19/11/2026): VisR 251 câu; ba bộ công khai 300 câu mỗi bộ, 100 câu cũ chạy lại cho câu trả lời giống hệt từng ký tự (tái lập 300/300). Lượt fp16 cũ giữ ở `results/B0_base/superseded_fp16_vision/` |
 | Chẩn đoán head EN/VI (C4, C5) | Xong, chạy lại với vision tower fp32 (17/11/2026). Danh sách expert head **trùng hoàn toàn** với lượt fp16 (EN 35/35, VI 44/44, cùng thứ tự top-8); tỉ lệ đọc đúng token VI tăng nhẹ 99,17% → 99,46%, EN giữ 99,68%. Chi phí: 1,24–1,26 s/ảnh (gấp khoảng 2 lần fp16), VRAM đỉnh 6,66 GB. Code inference HAVC đã có |
 | Dữ liệu train C6/C7 | Đã tải ViInfographicVQA; đã soạn thư xin dữ liệu ([Thu_xin_du_lieu.md](Thu_xin_du_lieu.md)) |
 
-Việc tiếp theo: duyệt nốt 578 câu vòng 2 → gộp nhãn, chia dev/test, gán `question_type` → chạy lại B0 với vision tower fp32 → B1, C3–C5, R trên dev.
+Việc tiếp theo: chạy judge cục bộ (`notebooks/judge_local.ipynb`): chấm 50 câu mẫu, đo κ, chấm B0 dev → B1, C3–C5, R, O trên dev.
 
 ## 12. Rủi ro và phương án dự phòng
 
