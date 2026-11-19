@@ -6,6 +6,11 @@ Quy tắc (chốt 15/11/2026, trước khi chạy nhánh nào trên các bộ n�
 - Xáo các nhóm bằng seed cố định, lấy N_DEV + N_TEST nhóm đầu; mỗi nhóm lấy ngẫu nhiên MỘT câu. Một câu mỗi ảnh
   giúp các câu gần độc lập với nhau (McNemar và bootstrap theo câu giả định điều này).
 - N_DEV nhóm đầu vào dev, N_TEST nhóm sau vào test.
+- Mở rộng dev (18/11/2026, trước khi chạy nhánh nào ngoài B0): thêm N_DEV_EXT nhóm ngay sau N_DEV + N_TEST nhóm đầu
+  vào dev (`dev_batch = "ext1"`; 100 câu dev ban đầu là `"orig"`). Thứ tự xáo và chuỗi rng.choice không đổi, nên
+  600 câu cũ (gồm toàn bộ test) giữ nguyên từng câu. Lý do: 100 câu dev mỗi bộ chỉ phát hiện được chênh lệch
+  khoảng 9–12 điểm giữa hai nhánh; 300 câu xuống khoảng 5–7 điểm. Quyết định dựa trên độ chính xác thống kê,
+  không dựa trên kết quả nhánh nào.
 - `answers` là các đáp án được chấp nhận; khi chấm lấy điểm cao nhất trên các đáp án. `answer` là đáp án xuất hiện
   nhiều nhất. TextVQA chỉ nhận đáp án có >= 2/10 người cùng trả lời (giữ toàn bộ ở `answers_raw`); DocVQA và
   ViTextVQA nhận mọi đáp án (ViTextVQA: gộp các annotation cùng ảnh, cùng câu hỏi).
@@ -29,6 +34,7 @@ import pyarrow.parquet as pq
 
 SEED = 20261115
 N_DEV, N_TEST = 100, 500
+N_DEV_EXT = 200
 RAW = Path("data/raw")
 OUT = Path("data/qa/public")
 
@@ -121,13 +127,14 @@ def main() -> None:
     keys = sorted(groups)
     rng = random.Random(SEED)
     rng.shuffle(keys)
-    if len(keys) < N_DEV + N_TEST:
-        sys.exit(f"Chỉ có {len(keys)} nhóm, không đủ {N_DEV + N_TEST}.")
+    n_total = N_DEV + N_TEST + N_DEV_EXT
+    if len(keys) < n_total:
+        sys.exit(f"Chỉ có {len(keys)} nhóm, không đủ {n_total}.")
 
     img_dir = RAW / args.dataset / "sampled"
     img_dir.mkdir(parents=True, exist_ok=True)
     picked = [(k_i, rng.choice(sorted(groups[k], key=lambda x: x["qid"])))
-              for k_i, k in enumerate(keys[:N_DEV + N_TEST])]
+              for k_i, k in enumerate(keys[:n_total])]
     # Ghi ảnh theo thứ tự nguồn để mỗi file parquet / zip chỉ phải đọc một lần
     paths = {}
     for _, it in sorted(picked, key=lambda p: str(p[1]["_src"])):
@@ -152,13 +159,15 @@ def main() -> None:
             accepted = sorted(cnt)
         rec.update({"dataset": args.dataset, "image": paths[it["qid"]].as_posix(),
                     "answer": majority(it["answers"]), "answers": accepted,
-                    "split": "dev" if k_i < N_DEV else "test"})
+                    "split": "test" if N_DEV <= k_i < N_DEV + N_TEST else "dev",
+                    "dev_batch": "orig" if k_i < N_DEV else ("ext1" if k_i >= N_DEV + N_TEST else None)})
         out_rows.append(rec)
 
     OUT.mkdir(parents=True, exist_ok=True)
     out = OUT / f"{args.dataset}.jsonl"
     out.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in out_rows), encoding="utf-8")
-    cfg = {"dataset": args.dataset, "seed": SEED, "n_dev": N_DEV, "n_test": N_TEST, "n_groups_total": len(keys),
+    cfg = {"dataset": args.dataset, "seed": SEED, "n_dev": N_DEV + N_DEV_EXT, "n_dev_orig": N_DEV, "n_dev_ext1": N_DEV_EXT,
+           "n_test": N_TEST, "n_groups_total": len(keys),
            "n_questions_total": len(items), "group_by": "ucsf_document_id" if args.dataset == "docvqa" else "image"}
     (OUT / f"{args.dataset}_config.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(cfg, ensure_ascii=False), "->", out)
