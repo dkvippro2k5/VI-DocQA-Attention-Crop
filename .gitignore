@@ -30,6 +30,8 @@ results/**/*.json
 results/**/*.csv
 !results/**/*_config.json
 !results/**/.gitkeep
+# LLM-judge: κ và quyết định chọn judge (nhỏ, cần để tái lập chỉ số chính)
+!results/judge/*.json
 
 # Claude Code local state
 .claude/
