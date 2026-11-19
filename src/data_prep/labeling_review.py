@@ -29,6 +29,10 @@ Chạy từ gốc repo:
 Chế độ audit: mở với nhãn người hiện tại (khung đỏ); đề xuất Codex là khung xanh, nạp bằng nút hoặc phím G.
 Phím 1 = giữ đáp án (lưu khung đang hiển thị), 2 = sửa đáp án, 3 = bỏ câu. Xuất review_decisions_audit.json;
 các quyết định này dùng để thay quyết định cũ của cùng qid ở bước gộp nhãn.
+    python -X utf8 -m src.data_prep.labeling_review --round r2codex  # duyệt đề xuất Codex cho câu vòng 2 chưa duyệt
+Chế độ r2codex: mở với đáp án + khung Codex (xanh), nháp Gemini để đối chiếu, nút mở trang trước/sau. Phím 1 (hoặc
+Ctrl+Enter) lưu đáp án trong ô; "đúng"/"sửa" tự xác định theo nháp Gemini. 3 = bỏ câu, G = nạp lại đề xuất Codex,
+H = dò khung theo đáp án đang sửa. Xuất review_decisions_r2codex.json; bước gộp vòng 2 đọc thêm file này.
 Ra: data/processed/visr_bench_vi/review/review_<vòng>.html (+ .xlsx), đã gitignore. Mỗi vòng có khóa localStorage và
 file xuất riêng (review_decisions_<vòng>.json) nên duyệt vòng sau không đè kết quả vòng trước.
 Vòng 2 không có đáp án Qwen để so; ưu tiên 1 thêm đáp án chỉ là dấu gạch (ô trống trong bảng).
@@ -153,6 +157,78 @@ def build_audit_rows(audit_dir):
                 "prop_answer": r.get("proposed_answer", ""), "prop_bbox": r.get("proposed_bbox") or [],
                 "prop_mode": r.get("proposed_bbox_mode") or "all",
             },
+        })
+    rows.sort(key=lambda x: (x["prio"], x["doc"], x["page"], x["qid"]))
+    return rows
+
+
+# ---- Duyệt đề xuất của Codex cho các câu vòng 2 chưa có quyết định người (--round r2codex)
+CODEX_PRIO = {1: "Codex đề xuất bỏ câu", 2: "Codex chưa chắc (medium/low)", 3: "Codex sửa đáp án Gemini",
+              4: "Codex giữ, có dấu hiệu đã giải quyết", 5: "Codex giữ, không dấu hiệu"}
+
+
+def neighbor_image(image_rel, k):
+    """Ảnh trang kề (cùng thư mục, số cuối tên file ± k); None nếu không có."""
+    p = Path(image_rel)
+    m = re.match(r"(.*_)(\d+)$", p.stem)
+    if not m:
+        return None
+    q = p.with_name(f"{m.group(1)}{int(m.group(2)) + k}{p.suffix}")
+    return Path(os.path.relpath((IN_DIR / q).resolve(), OUT_DIR)).as_posix() if (IN_DIR / q).exists() else None
+
+
+def build_codex_rows(audit_dir):
+    """578 câu vòng 2 chưa duyệt: 566 đề xuất lượt 02 (rules_version 2) + 12 đề xuất lượt thử 01.
+
+    Trang mở với đề xuất Codex (đáp án + khung xanh); nháp Gemini để đối chiếu. Câu đã có trong
+    review_decisions_r2.json (người đã duyệt) bị bỏ qua.
+    """
+    from src.data_prep.label_visr_answers import excluded_docs
+    skip = excluded_docs()
+    labels = {r["qid"]: r for r in load(ROUNDS["r2"][0]) if r["document_id"] not in skip}
+    done_path = OUT_DIR / "review_decisions_r2.json"
+    done = {d["qid"] for d in json.loads(done_path.read_text(encoding="utf-8"))["decisions"]} if done_path.exists() else set()
+    props = {}
+    for p in load(audit_dir / "pilot_01_new_proposals.jsonl"):
+        g = labels.get(p["qid"], {}).get("answer", "")
+        props[p["qid"]] = {
+            "source": "pilot_01", "verdict": "đúng" if normalize(p["answer"]) == normalize(g) else "sửa",
+            "answer": p["answer"], "bbox": p.get("evidence_bbox") or [], "mode": p.get("bbox_mode") or "all",
+            "long": False, "drop_reason": "", "confidence": "high" if p.get("risk") in (None, "none") else "medium",
+            "doubt_types": [], "issue_types": [], "reason": p.get("note", ""), "quote": "", "adjacent": None,
+            "alt_verdict": None, "alt_answer": None, "alt_drop_reason": None}
+    for p in load(audit_dir / "run_02_pending_proposals.jsonl"):
+        props[p["qid"]] = {
+            "source": "run_02", "verdict": p["proposed_verdict"], "answer": p.get("proposed_answer") or "",
+            "bbox": p.get("proposed_bbox") or [], "mode": p.get("proposed_bbox_mode") or "all",
+            "long": bool(p.get("long_answer")), "drop_reason": p.get("drop_reason") or "",
+            "confidence": p.get("confidence", ""), "doubt_types": p.get("doubt_types") or [],
+            "issue_types": p.get("issue_types") or [], "reason": p.get("reason", ""), "quote": p.get("evidence_quote", ""),
+            "adjacent": p.get("adjacent_page_quote"), "alt_verdict": p.get("alt_verdict"),
+            "alt_answer": p.get("alt_answer"), "alt_drop_reason": p.get("alt_drop_reason")}
+    rows = []
+    for qid, c in props.items():
+        r = labels.get(qid)
+        if r is None or qid in done:
+            continue
+        if c["verdict"] == "bỏ câu":
+            prio = 1
+        elif c["confidence"] != "high":
+            prio = 2
+        elif c["verdict"] == "sửa":
+            prio = 3
+        else:
+            prio = 4 if c["doubt_types"] else 5
+        doc = r["document_id"][:8]
+        img = (IN_DIR / r["image"]).resolve()
+        rows.append({
+            "prio": prio, "reasons": [f"Codex: {c['verdict']} · {c['confidence']}"] + c["doubt_types"],
+            "qid": qid, "doc": DOC_NAME.get(doc, doc), "page": r["page_id"], "question": r["question"],
+            "answer": r["answer"], "answerable": r["answerable"], "evidence_type": r.get("evidence_type", ""),
+            "qwen": None, "f1q": None, "workers": {}, "img_abs": img,
+            "img": Path(os.path.relpath(img, OUT_DIR)).as_posix(), "page_text": "", "document_id": r["document_id"],
+            "image_rel": r["image"], "prev_img": neighbor_image(r["image"], -1), "next_img": neighbor_image(r["image"], 1),
+            "codex": c,
         })
     rows.sort(key=lambda x: (x["prio"], x["doc"], x["page"], x["qid"]))
     return rows
@@ -383,6 +459,7 @@ function showSugg() { $("sugg").textContent = `Gợi ý: ${sugg.boxes.length} kh
 function resuggest() {
   const it = ITEMS[view[cur]];
   if (it.audit) { loadProposal(it); return; }
+  if (it.codex) { loadCodex(it); return; }
   sugg = suggest($("answer").value, it); boxes = sugg.boxes.map(b => b.slice()); $("alt").checked = sugg.alt; showSugg(); drawBoxes();
 }
 
@@ -423,6 +500,57 @@ if (ITEMS.some(x => x.audit)) {
   $("resugg").textContent = "Nạp đề xuất Codex (G)";
   $("boxHint").textContent = "Khung đỏ: nhãn người hiện tại (hoặc khung vẽ tay). Khung xanh: đề xuất Codex. Bấm vào một khung để xóa; kéo chuột để vẽ thêm. 1 lưu đúng các khung đang hiển thị.";
   document.querySelector("header b").textContent = "Duyệt lại theo Codex";
+}
+
+// ---- chế độ duyệt đề xuất Codex cho câu chưa duyệt (r2codex): mở với đáp án + khung Codex (xanh)
+const CODEX_MODE = ITEMS.some(x => x.codex);
+const codexSugg = (C) => ({ boxes: C.bbox.map(b => b.slice()), how: "khung xanh = đề xuất Codex", alt: C.mode === "any" });
+const normA = (s) => normToks(s || "").join(" ");
+function loadCodex(it) {
+  const C = it.codex;
+  sugg = codexSugg(C); showSugg();
+  if (C.verdict === "bỏ câu") {
+    boxes = []; $("answer").value = it.answer; $("reason").value = C.drop_reason || ""; $("long").checked = false;
+    say("Codex đề xuất bỏ câu" + (C.drop_reason ? ": " + C.drop_reason : "") + ". Đồng ý thì bấm 3; muốn giữ thì sửa đáp án, vẽ khung rồi bấm 1.");
+  } else {
+    boxes = C.bbox.map(b => b.slice()); $("answer").value = C.answer; $("alt").checked = C.mode === "any";
+    $("long").checked = !!C.long; $("reason").value = ""; say("");
+  }
+  drawBoxes(); showMeta();
+}
+function wordSuggest(it) {  // dò khung theo đáp án đang sửa, dùng tọa độ từ của trang
+  sugg = suggest($("answer").value, it); boxes = sugg.boxes.map(b => b.slice()); $("alt").checked = sugg.alt; showSugg(); drawBoxes();
+}
+function renderCodex(o, it) {
+  const C = it.codex;
+  line(o, "src", `Đề xuất Codex (${C.source === "pilot_01" ? "lượt thử 01" : "lượt 02"}) · độ tin cậy ${C.confidence || "?"}`);
+  line(o, "other", `${C.verdict}${C.drop_reason ? ": " + C.drop_reason : ""} · ${C.bbox.length} khung (${C.mode})${C.long ? " · đáp án dài" : ""}`);
+  if (C.verdict !== "bỏ câu") line(o, "other", C.answer || "(trống)");
+  if (C.doubt_types.length || C.issue_types.length) line(o, "src", "Dấu hiệu / loại lỗi: " + [...C.doubt_types, ...C.issue_types].join(", "));
+  line(o, "src", "Lý do của Codex"); line(o, "other", C.reason || "(không có)");
+  if (C.quote) { line(o, "src", "Codex trích từ ảnh"); line(o, "other", C.quote); }
+  if (C.adjacent) { line(o, "src", "Codex trích trang kề"); line(o, "other", C.adjacent); }
+  if (C.alt_verdict) { line(o, "src", "Phương án thay thế"); line(o, "other", `${C.alt_verdict}${C.alt_drop_reason ? ": " + C.alt_drop_reason : ""}${C.alt_answer ? " · " + C.alt_answer : ""}`); }
+  line(o, "src", `Nháp Gemini (${it.answerable ? "trả lời được" : "KHÔNG trả lời được"})`);
+  line(o, "other", it.answer || "(trống)");
+  const bar = document.createElement("div"); bar.className = "btns"; bar.style.marginTop = "8px";
+  const mk = (t, f) => { const b = document.createElement("button"); b.textContent = t; b.onclick = f; bar.appendChild(b); };
+  mk("Nạp đề xuất Codex (G)", () => loadCodex(it));
+  if (it.answer) mk("Dùng nháp Gemini", () => { $("answer").value = it.answer; showMeta(); });
+  mk("Dò khung theo đáp án (H)", () => wordSuggest(it));
+  o.appendChild(bar);
+  const nav = document.createElement("div"); nav.className = "btns"; nav.style.marginTop = "6px";
+  for (const [t, p] of [["Mở trang trước ↗", it.prev_img], ["Mở trang sau ↗", it.next_img]]) {
+    const b = document.createElement("button"); b.textContent = p ? t : t.replace(" ↗", " (không có)"); b.disabled = !p;
+    if (p) b.onclick = () => window.open(p, "_blank"); nav.appendChild(b);
+  }
+  o.appendChild(nav);
+}
+if (CODEX_MODE) {
+  $("bOk").textContent = "1 · Lưu đáp án"; $("bFix").textContent = "2 · Sửa đáp án";
+  $("resugg").textContent = "Nạp đề xuất Codex (G)";
+  $("boxHint").textContent = "Khung xanh: đề xuất Codex (hoặc khung dò theo đáp án). Khung đỏ: vẽ tay. Bấm vào khung để xóa; kéo chuột để vẽ thêm. 1 lưu đáp án trong ô và đúng các khung đang hiển thị; trạng thái đúng/sửa tự xác định theo nháp Gemini.";
+  document.querySelector("header b").textContent = "Duyệt đề xuất Codex (vòng 2)";
 }
 
 // ---- khung bằng chứng: lưu theo pixel ảnh gốc, vẽ theo phần trăm nên không lệch khi phóng to
@@ -526,12 +654,18 @@ function showMeta() {
     $("answerMeta").textContent = `Nhãn người hiện tại: ${it.audit.prev_verdict} · đáp án đang có ${nWords($("answer").value)} từ · dạng (tự gán khi gộp): ${formOf($("answer").value, $("long").checked)}`;
     return;
   }
+  if (it.codex) {
+    const t = $("answer").value, src = normA(t) === normA(it.answer) ? "bằng nháp Gemini → đúng"
+      : normA(t) === normA(it.codex.answer) ? "bằng đề xuất Codex → sửa" : "tự sửa → sửa";
+    $("answerMeta").textContent = `Đáp án trong ô ${src} · ${nWords(t)} từ · dạng (tự gán khi gộp): ${formOf(t, $("long").checked)}`;
+    return;
+  }
   $("answerMeta").textContent = `Gemini: ${it.answerable ? "trả lời được" : "KHÔNG trả lời được"} · bằng chứng: ${it.evidence_type} · đáp án đang có ${nWords($("answer").value)} từ · dạng (tự gán khi gộp): ${formOf($("answer").value, $("long").checked)}`;
 }
 let suggTimer = null;
 $("answer").addEventListener("input", () => {
   showMeta();
-  if (!ITEMS[view[cur]].audit && boxes.every(inSugg)) { clearTimeout(suggTimer); suggTimer = setTimeout(resuggest, 400); }  // chưa vẽ tay: dò lại theo đáp án mới
+  if (!ITEMS[view[cur]].audit && !ITEMS[view[cur]].codex && boxes.every(inSugg)) { clearTimeout(suggTimer); suggTimer = setTimeout(resuggest, 400); }  // chưa vẽ tay: dò lại theo đáp án mới
 });
 $("resugg").onclick = resuggest;
 function render() {
@@ -539,7 +673,7 @@ function render() {
   const it = ITEMS[view[cur]], d = dec[it.qid];
   $("pos").textContent = `Câu ${cur + 1}/${view.length}`;
   const A = it.audit;
-  sugg = A ? auditSugg(A) : suggest(d && d.verdict === "sửa" ? d.answer_final : (it.answer || it.qwen || ""), it);
+  sugg = A ? auditSugg(A) : it.codex ? codexSugg(it.codex) : suggest(d && d.verdict === "sửa" ? d.answer_final : (it.answer || it.qwen || ""), it);
   boxes = d && d.evidence_bbox ? d.evidence_bbox.map(b => b.slice()) : (A ? A.prev_bbox : sugg.boxes).map(b => b.slice());
   showSugg();
   if ($("img").getAttribute("src") !== it.img) { $("img").src = it.img; $("imgbox").scrollTop = 0; } else drawBoxes();
@@ -560,8 +694,12 @@ function render() {
   else if (!isDone(d)) { st.className = "state s-thiếu"; st.textContent = d.verdict + " (còn thiếu khung bằng chứng)"; }
   else { st.className = "state s-" + d.verdict.split(" ")[0]; st.textContent = d.verdict + (d.drop_reason ? ": " + d.drop_reason : ` · ${d.evidence_bbox.length} khung`); }
   say("");
+  if (it.codex) {  // chưa duyệt: mở với đề xuất Codex; đã duyệt: hiện đúng đáp án đã lưu
+    if (!d) loadCodex(it);
+    else { $("answer").value = d.verdict === "bỏ câu" ? it.answer : d.answer_final; showMeta(); }
+  }
   const o = $("others"); o.textContent = "";
-  if (A) { renderAudit(o, it); } else {
+  if (A) { renderAudit(o, it); } else if (it.codex) { renderCodex(o, it); } else {
   line(o, "src", "Đáp án Qwen3-VL" + (it.f1q !== null ? ` (F1 với Gemini ${it.f1q})` : ""));
   line(o, "other", it.qwen || "(không có)");
   if (it.qwen) { const b = document.createElement("button"); b.textContent = "Dùng đáp án này"; b.style.marginTop = "4px";
@@ -574,8 +712,37 @@ function render() {
   $("done").textContent = `${n}/${ITEMS.length} xong`;
   $("bar").style.width = (100 * n / ITEMS.length) + "%";
 }
+const boxKey = (bs) => bs.map(b => b.join()).sort().join("|");
+function decideCodex(verdict, it, txt, img) {
+  // 1, 2 hay Ctrl+Enter đều lưu đáp án trong ô; "đúng"/"sửa" xác định theo nháp Gemini để khớp bước gộp nhãn
+  const C = it.codex;
+  if (verdict === "bỏ câu") {
+    if (!$("reason").value) { say("Chọn lý do bỏ câu trước, rồi bấm 3 lại."); $("reason").focus(); return false; }
+    if ($("reason").value === "khác" && !$("note").value.trim()) { say("Lý do 'khác' cần ghi chú."); $("note").focus(); return false; }
+  } else {
+    if (!txt) { say("Ô đáp án trống: gõ đáp án (hoặc nạp đề xuất Codex / nháp Gemini) rồi lưu."); $("answer").focus(); return false; }
+    if (!boxes.length) { say("Cần ít nhất một khung bằng chứng trên ảnh."); return false; }
+    verdict = normA(txt) === normA(it.answer) ? "đúng" : "sửa";
+  }
+  const drop = verdict === "bỏ câu";
+  dec[it.qid] = { qid: it.qid, verdict,
+                  answer_final: drop ? "" : (verdict === "đúng" ? it.answer : txt),
+                  evidence_bbox: drop ? [] : boxes.map(b => b.slice()),
+                  bbox_source: drop ? "" : bboxSource(),
+                  image_size: [img.naturalWidth, img.naturalHeight],
+                  drop_reason: drop ? $("reason").value : "",
+                  long_answer: !drop && $("long").checked,
+                  bbox_mode: drop ? "" : ($("alt").checked && boxes.length > 1 ? "any" : "all"),
+                  note: $("note").value.trim(), reviewed_at: new Date().toISOString(),
+                  review_mode: "codex", codex_source: C.source, codex_verdict: C.verdict, codex_confidence: C.confidence,
+                  codex_drop_reason: C.drop_reason || "",
+                  codex_answer_match: !drop && C.verdict !== "bỏ câu" && normA(txt) === normA(C.answer),
+                  codex_bbox_match: !drop && C.bbox.length > 0 && boxKey(boxes) === boxKey(C.bbox) };
+  save(); return true;
+}
 function decide(verdict) {
   const it = ITEMS[view[cur]], txt = $("answer").value.trim(), img = $("img");
+  if (it.codex) return decideCodex(verdict, it, txt, img);
   if (verdict === "đúng" && !it.answer) { say(it.audit ? "Nhãn người đang là bỏ câu: muốn giữ câu thì gõ đáp án (hoặc nạp đề xuất Codex) rồi bấm Ctrl+Enter; đồng ý bỏ thì bấm 3." : "Gemini không trả lời câu này: nếu trang có đáp án thì gõ vào ô và bấm Ctrl+Enter; nếu không thì chọn lý do và bấm 3."); return false; }
   if (verdict === "bỏ câu" && !$("reason").value) { say("Chọn lý do bỏ câu trước, rồi bấm 3 lại."); $("reason").focus(); return false; }
   if (verdict !== "bỏ câu" && !boxes.length) { say("Cần vẽ ít nhất một khung bằng chứng trên ảnh."); return false; }
@@ -599,6 +766,11 @@ function bboxSource() {
     const key = (bs) => bs.map(b => b.join()).sort().join("|");
     if (key(boxes) === key(it.audit.prev_bbox)) return "giữ khung người";
     if (it.audit.prop_bbox.length && key(boxes) === key(it.audit.prop_bbox)) return "đề xuất Codex";
+    return "sửa tay";
+  }
+  if (it.codex) {
+    if (it.codex.bbox.length && boxKey(boxes) === boxKey(it.codex.bbox)) return "đề xuất Codex";
+    if (sugg.boxes.length && boxKey(boxes) === boxKey(sugg.boxes)) return "gợi ý";
     return "sửa tay";
   }
   const n = boxes.filter(inSugg).length;
@@ -648,6 +820,7 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "+" || e.key === "=") stepZoom(1);
   else if (e.key === "-") stepZoom(-1);
   else if (k === "g") resuggest();
+  else if (k === "h" && CODEX_MODE) wordSuggest(ITEMS[view[cur]]);
   else if (e.key === "Escape") document.activeElement.blur();
   else if (e.key === "ArrowRight") go(1);
   else if (e.key === "ArrowLeft") go(-1);
@@ -719,10 +892,17 @@ def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument("--round", default="v1", choices=sorted(ROUNDS) + ["audit"])
+    ap.add_argument("--round", default="v1", choices=sorted(ROUNDS) + ["audit", "r2codex"])
     ap.add_argument("--audit-dir", type=Path, default=AUDIT_DIR, help="thư mục kết quả kiểm tra của Codex")
     args = ap.parse_args()
     rnd = args.round
+    if rnd == "r2codex":
+        rows = build_codex_rows(args.audit_dir)
+        html = write_html(rows, rnd, CODEX_PRIO)
+        print(f"Trang duyệt đề xuất Codex: {html}")
+        for p, name in CODEX_PRIO.items():
+            print(f"  ưu tiên {p} ({name}): {sum(r['prio'] == p for r in rows)} câu")
+        return
     if rnd == "audit":
         rows = build_audit_rows(args.audit_dir)
         html = write_html(rows, rnd, AUDIT_PRIO)

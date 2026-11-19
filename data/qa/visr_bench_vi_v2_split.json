@@ -1,0 +1,507 @@
+{
+ "version": "visr_bench_vi_v2",
+ "created": "2026-11-18",
+ "source": "data/qa/visr_bench_vi_r2.jsonl",
+ "etype_file": "data/qa/visr_bench_vi_r2_etype.jsonl",
+ "n_missing_etype": 0,
+ "axes": {
+  "max_pixels": 802816,
+  "size_bins": [
+   0.005,
+   0.05
+  ],
+  "res_bins_px": [
+   15,
+   25
+  ]
+ },
+ "split_rule": {
+  "unit": "document_id",
+  "search": "exhaustive 2^19",
+  "dev_target": 0.3,
+  "dev_range": [
+   0.27,
+   0.33
+  ],
+  "min_dev_docs": 5,
+  "max_doc_share_of_test": 0.5,
+  "objective": "sum TVD(dev, test) over question_type, answer_form, has_diacritic",
+  "tie_break": "|dev_frac - 0.30|, then smaller mask",
+  "n_feasible": 37771
+ },
+ "chosen": {
+  "mask": 72235,
+  "dev_frac": 0.302,
+  "n_dev": 251,
+  "n_dev_docs": 8,
+  "score_tvd_sum": 0.0103,
+  "tvd_question_type": 0.0057,
+  "tvd_answer_form": 0.0046,
+  "tvd_has_diacritic": 0.0,
+  "dev_docs": [
+   "004e698e",
+   "0148f888",
+   "04520097",
+   "1225fe01",
+   "45ce2a77",
+   "4d7e1420",
+   "5b4061b0",
+   "93906020"
+  ]
+ },
+ "top10": [
+  {
+   "mask": 72235,
+   "dev_frac": 0.302,
+   "n_dev": 251,
+   "n_dev_docs": 8,
+   "score_tvd_sum": 0.0103,
+   "tvd_question_type": 0.0057,
+   "tvd_answer_form": 0.0046,
+   "tvd_has_diacritic": 0.0,
+   "dev_docs": [
+    "004e698e",
+    "0148f888",
+    "04520097",
+    "1225fe01",
+    "45ce2a77",
+    "4d7e1420",
+    "5b4061b0",
+    "93906020"
+   ]
+  },
+  {
+   "mask": 202283,
+   "dev_frac": 0.2984,
+   "n_dev": 248,
+   "n_dev_docs": 9,
+   "score_tvd_sum": 0.0117,
+   "tvd_question_type": 0.0051,
+   "tvd_answer_form": 0.0036,
+   "tvd_has_diacritic": 0.0031,
+   "dev_docs": [
+    "004e698e",
+    "0148f888",
+    "04520097",
+    "1225fe01",
+    "45ce2a77",
+    "48c6f318",
+    "5b4061b0",
+    "93906020",
+    "c9ceb1b7"
+   ]
+  },
+  {
+   "mask": 199211,
+   "dev_frac": 0.302,
+   "n_dev": 251,
+   "n_dev_docs": 8,
+   "score_tvd_sum": 0.0144,
+   "tvd_question_type": 0.0062,
+   "tvd_answer_form": 0.0082,
+   "tvd_has_diacritic": 0.0,
+   "dev_docs": [
+    "004e698e",
+    "0148f888",
+    "04520097",
+    "1225fe01",
+    "45ce2a77",
+    "4d7e1420",
+    "93906020",
+    "c9ceb1b7"
+   ]
+  },
+  {
+   "mask": 71211,
+   "dev_frac": 0.2912,
+   "n_dev": 242,
+   "n_dev_docs": 8,
+   "score_tvd_sum": 0.0146,
+   "tvd_question_type": 0.0101,
+   "tvd_answer_form": 0.0022,
+   "tvd_has_diacritic": 0.0023,
+   "dev_docs": [
+    "004e698e",
+    "0148f888",
+    "04520097",
+    "1225fe01",
+    "45ce2a77",
+    "48c6f318",
+    "5b4061b0",
+    "93906020"
+   ]
+  },
+  {
+   "mask": 72363,
+   "dev_frac": 0.3093,
+   "n_dev": 257,
+   "n_dev_docs": 9,
+   "score_tvd_sum": 0.015,
+   "tvd_question_type": 0.0069,
+   "tvd_answer_form": 0.0076,
+   "tvd_has_diacritic": 0.0005,
+   "dev_docs": [
+    "004e698e",
+    "0148f888",
+    "04520097",
+    "1225fe01",
+    "3e13a0de",
+    "45ce2a77",
+    "4d7e1420",
+    "5b4061b0",
+    "93906020"
+   ]
+  },
+  {
+   "mask": 69195,
+   "dev_frac": 0.3153,
+   "n_dev": 262,
+   "n_dev_docs": 8,
+   "score_tvd_sum": 0.0156,
+   "tvd_question_type": 0.0042,
+   "tvd_answer_form": 0.0112,
+   "tvd_has_diacritic": 0.0001,
+   "dev_docs": [
+    "004e698e",
+    "0148f888",
+    "04520097",
+    "318bbf14",
+    "45ce2a77",
+    "48c6f318",
+    "4d7e1420",
+    "93906020"
+   ]
+  },
+  {
+   "mask": 199339,
+   "dev_frac": 0.3093,
+   "n_dev": 257,
+   "n_dev_docs": 9,
+   "score_tvd_sum": 0.0169,
+   "tvd_question_type": 0.0099,
+   "tvd_answer_form": 0.0065,
+   "tvd_has_diacritic": 0.0005,
+   "dev_docs": [
+    "004e698e",
+    "0148f888",
+    "04520097",
+    "1225fe01",
+    "3e13a0de",
+    "45ce2a77",
+    "4d7e1420",
+    "93906020",
+    "c9ceb1b7"
+   ]
+  },
+  {
+   "mask": 73387,
+   "dev_frac": 0.3129,
+   "n_dev": 260,
+   "n_dev_docs": 10,
+   "score_tvd_sum": 0.0184,
+   "tvd_question_type": 0.0075,
+   "tvd_answer_form": 0.0074,
+   "tvd_has_diacritic": 0.0035,
+   "dev_docs": [
+    "004e698e",
+    "0148f888",
+    "04520097",
+    "1225fe01",
+    "3e13a0de",
+    "45ce2a77",
+    "48c6f318",
+    "4d7e1420",
+    "5b4061b0",
+    "93906020"
+   ]
+  },
+  {
+   "mask": 202411,
+   "dev_frac": 0.3057,
+   "n_dev": 254,
+   "n_dev_docs": 10,
+   "score_tvd_sum": 0.019,
+   "tvd_question_type": 0.0087,
+   "tvd_answer_form": 0.0077,
+   "tvd_has_diacritic": 0.0026,
+   "dev_docs": [
+    "004e698e",
+    "0148f888",
+    "04520097",
+    "1225fe01",
+    "3e13a0de",
+    "45ce2a77",
+    "48c6f318",
+    "5b4061b0",
+    "93906020",
+    "c9ceb1b7"
+   ]
+  },
+  {
+   "mask": 200363,
+   "dev_frac": 0.3129,
+   "n_dev": 260,
+   "n_dev_docs": 10,
+   "score_tvd_sum": 0.0207,
+   "tvd_question_type": 0.0061,
+   "tvd_answer_form": 0.0111,
+   "tvd_has_diacritic": 0.0035,
+   "dev_docs": [
+    "004e698e",
+    "0148f888",
+    "04520097",
+    "1225fe01",
+    "3e13a0de",
+    "45ce2a77",
+    "48c6f318",
+    "4d7e1420",
+    "93906020",
+    "c9ceb1b7"
+   ]
+  }
+ ],
+ "dev_documents": [
+  "004e698e1b9dcf1bda39fe8afe786f85",
+  "0148f888c390bc3f904b558a736105a1",
+  "04520097db669156861e11f50b026e22",
+  "1225fe01034696face7a22142703a29c",
+  "45ce2a7723986470bb8bebf85fe4e7cb",
+  "4d7e1420bcc5167e36ef372aa8f2c813",
+  "5b4061b063061b24b157354229099206",
+  "939060208f76fb5bda354d5a46b7980e"
+ ],
+ "test_documents": [
+  "037cf1fc4026aa6aadfe5448672742f7",
+  "0598fd6ae2202b7b2281d6ed22745e3f",
+  "318bbf141bad19a3d8365e6fb6df1c09",
+  "3e13a0de4e076831941d2fd376e2c0bf",
+  "40ecb63b58aeae84ea801536d4583c6b",
+  "48c6f31807cca712530bdddfbeae961b",
+  "6885402dab7801e4a413af712cdb4d2b",
+  "6dc7b1875ba43c6d2326beade39420f1",
+  "9320646b21bd072c7c7de1275f4cb247",
+  "c9ceb1b7b3a2fa1ab44c161a1797be7b",
+  "f2e6626aae8b95e4f8be8fcd83f15ade"
+ ],
+ "dev": {
+  "n": 251,
+  "n_docs": 8,
+  "n_short": 168,
+  "question_type": {
+   "small_detail": {
+    "n": 29,
+    "pct": 11.6
+   },
+   "table": {
+    "n": 46,
+    "pct": 18.3
+   },
+   "text": {
+    "n": 176,
+    "pct": 70.1
+   }
+  },
+  "answer_form": {
+   "short": {
+    "n": 168,
+    "pct": 66.9
+   },
+   "list": {
+    "n": 69,
+    "pct": 27.5
+   },
+   "long": {
+    "n": 14,
+    "pct": 5.6
+   }
+  },
+  "has_diacritic": {
+   "True": {
+    "n": 206,
+    "pct": 82.1
+   },
+   "False": {
+    "n": 45,
+    "pct": 17.9
+   }
+  },
+  "evidence_type": {
+   "text": 200,
+   "figure": 5,
+   "table": 46
+  },
+  "target_size_short": {
+   "medium": 105,
+   "large": 10,
+   "small": 53
+  },
+  "eff_res_short": {
+   "high": 118,
+   "mid": 43,
+   "low": 7
+  },
+  "short_small_and_diacritic": 23,
+  "by_document": {
+   "04520097": 103,
+   "93906020": 47,
+   "45ce2a77": 38,
+   "0148f888": 23,
+   "1225fe01": 12,
+   "4d7e1420": 12,
+   "004e698e": 10,
+   "5b4061b0": 6
+  }
+ },
+ "test": {
+  "n": 580,
+  "n_docs": 11,
+  "n_short": 387,
+  "question_type": {
+   "small_detail": {
+    "n": 64,
+    "pct": 11.0
+   },
+   "table": {
+    "n": 106,
+    "pct": 18.3
+   },
+   "text": {
+    "n": 410,
+    "pct": 70.7
+   }
+  },
+  "answer_form": {
+   "short": {
+    "n": 387,
+    "pct": 66.7
+   },
+   "list": {
+    "n": 158,
+    "pct": 27.2
+   },
+   "long": {
+    "n": 35,
+    "pct": 6.0
+   }
+  },
+  "has_diacritic": {
+   "True": {
+    "n": 476,
+    "pct": 82.1
+   },
+   "False": {
+    "n": 104,
+    "pct": 17.9
+   }
+  },
+  "evidence_type": {
+   "text": 440,
+   "table": 106,
+   "figure": 34
+  },
+  "target_size_short": {
+   "medium": 241,
+   "small": 115,
+   "large": 31
+  },
+  "eff_res_short": {
+   "high": 299,
+   "mid": 86,
+   "low": 2
+  },
+  "short_small_and_diacritic": 57,
+  "by_document": {
+   "40ecb63b": 131,
+   "0598fd6a": 118,
+   "9320646b": 117,
+   "037cf1fc": 66,
+   "f2e6626a": 53,
+   "6885402d": 43,
+   "318bbf14": 26,
+   "6dc7b187": 11,
+   "3e13a0de": 6,
+   "c9ceb1b7": 6,
+   "48c6f318": 3
+  }
+ },
+ "all": {
+  "n": 831,
+  "n_docs": 19,
+  "n_short": 555,
+  "question_type": {
+   "small_detail": {
+    "n": 93,
+    "pct": 11.2
+   },
+   "table": {
+    "n": 152,
+    "pct": 18.3
+   },
+   "text": {
+    "n": 586,
+    "pct": 70.5
+   }
+  },
+  "answer_form": {
+   "short": {
+    "n": 555,
+    "pct": 66.8
+   },
+   "list": {
+    "n": 227,
+    "pct": 27.3
+   },
+   "long": {
+    "n": 49,
+    "pct": 5.9
+   }
+  },
+  "has_diacritic": {
+   "True": {
+    "n": 682,
+    "pct": 82.1
+   },
+   "False": {
+    "n": 149,
+    "pct": 17.9
+   }
+  },
+  "evidence_type": {
+   "text": 640,
+   "table": 152,
+   "figure": 39
+  },
+  "target_size_short": {
+   "medium": 346,
+   "small": 168,
+   "large": 41
+  },
+  "eff_res_short": {
+   "high": 417,
+   "mid": 129,
+   "low": 9
+  },
+  "short_small_and_diacritic": 80,
+  "by_document": {
+   "40ecb63b": 131,
+   "0598fd6a": 118,
+   "9320646b": 117,
+   "04520097": 103,
+   "037cf1fc": 66,
+   "f2e6626a": 53,
+   "93906020": 47,
+   "6885402d": 43,
+   "45ce2a77": 38,
+   "318bbf14": 26,
+   "0148f888": 23,
+   "1225fe01": 12,
+   "4d7e1420": 12,
+   "6dc7b187": 11,
+   "004e698e": 10,
+   "3e13a0de": 6,
+   "c9ceb1b7": 6,
+   "5b4061b0": 6,
+   "48c6f318": 3
+  }
+ }
+}

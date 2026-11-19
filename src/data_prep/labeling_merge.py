@@ -25,6 +25,7 @@ Chạy từ gốc repo:
     python -X utf8 -m src.data_prep.labeling_merge              # vòng 1 -> visr_bench_vi_v1*
     python -X utf8 -m src.data_prep.labeling_merge --round r2   # vòng 2 -> visr_bench_vi_r2* (không có đáp án Qwen)
     --no-audit                  # không áp quyết định duyệt lại (để so sánh)
+    --codex PATH                # vòng 2: quyết định từ review_r2codex.html (mặc định review_decisions_r2codex.json)
     --decisions/--audit PATH    # dùng file khác thay file mặc định trong review/
 """
 
@@ -54,6 +55,8 @@ def answer_source(d, gemini, qwen, audited=False):
     final = normalize(d["answer_final"])
     if gemini and final == normalize(gemini):
         return "gemini"
+    if d.get("codex_answer_match"):  # người duyệt giữ nguyên đáp án Codex đề xuất (chế độ r2codex)
+        return "codex"
     if qwen and final == normalize(qwen):
         return "qwen"
     return "human"
@@ -81,6 +84,8 @@ def main() -> None:
     ap.add_argument("--decisions", type=Path, default=None)
     ap.add_argument("--audit", type=Path, default=DATA / "review" / "review_decisions_audit.json")
     ap.add_argument("--no-audit", action="store_true")
+    ap.add_argument("--codex", type=Path, default=DATA / "review" / "review_decisions_r2codex.json",
+                    help="quyết định duyệt trên trang đề xuất Codex (chỉ vòng 2)")
     args = ap.parse_args()
     rnd = args.round
     DECISIONS = args.decisions or DATA / "review" / f"review_decisions_{rnd}.json"
@@ -93,6 +98,16 @@ def main() -> None:
     qwen = {r["qid"]: r["answer"] for r in load(QWEN)} if QWEN.exists() else {}
     exp = json.loads(DECISIONS.read_text(encoding="utf-8"))
     dec = {d["qid"]: d for d in exp["decisions"]}
+
+    # Vòng 2: câu chưa duyệt ở review_r2.html được duyệt trên trang đề xuất Codex (review_r2codex.html)
+    codex_exp, codex_warn = None, []
+    if rnd == "r2" and args.codex.exists():
+        codex_exp = json.loads(args.codex.read_text(encoding="utf-8"))
+        for d in codex_exp["decisions"]:
+            if d["qid"] in dec:
+                codex_warn.append(f"{d['qid']}: đã có trong {DECISIONS.name}, giữ quyết định cũ")
+                continue
+            dec[d["qid"]] = d
 
     # Quyết định duyệt lại thay quyết định cũ của cùng qid (chỉ các qid thuộc vòng này).
     audited, audit_warn, audit_exp = {}, [], None
@@ -170,6 +185,15 @@ def main() -> None:
         "drop_reason": dict(Counter(x["drop_reason"] for x in dropped)),
         "by_document": dict(by_doc),
         "gemini_accept_rate": round(sum(x["answer_source"] == "gemini" for x in kept) / max(1, len(labels) - len(missing)), 3),
+        "codex_review": None if codex_exp is None else {
+            "file": args.codex.name, "exported_at": codex_exp.get("exported_at"),
+            "n_decisions": sum(1 for q in labels if dec.get(q, {}).get("review_mode") == "codex"),
+            # người duyệt so với đề xuất Codex: cùng quyết định giữ/bỏ, giữ nguyên đáp án, giữ nguyên khung
+            "same_keep_drop": sum(1 for q in labels if dec.get(q, {}).get("review_mode") == "codex"
+                                  and (dec[q]["verdict"] == "bỏ câu") == (dec[q].get("codex_verdict") == "bỏ câu")),
+            "answer_match": sum(1 for q in labels if dec.get(q, {}).get("codex_answer_match")),
+            "bbox_match": sum(1 for q in labels if dec.get(q, {}).get("codex_bbox_match")),
+        },
         "audit": None if audit_exp is None else {
             "file": args.audit.name, "exported_at": audit_exp.get("exported_at"), "n_applied": len(audited),
             "transition": dict(Counter(f"{v['previous_verdict']} -> {dec[q]['verdict']}" for q, v in audited.items())),
@@ -182,6 +206,10 @@ def main() -> None:
         print(f"\nChưa duyệt: {len(missing)} câu, ví dụ {missing[:3]}")
     if extra:
         print(f"Quyết định không có trong nhãn (tài liệu bị loại?): {len(extra)}")
+    if codex_warn:
+        print("\nCảnh báo trang đề xuất Codex:")
+        for w in codex_warn:
+            print("  " + w)
     if audit_warn:
         print("\nCảnh báo duyệt lại:")
         for w in audit_warn:
