@@ -1,0 +1,36 @@
+{
+  "branch": "B0",
+  "model": "Qwen/Qwen2.5-VL-3B-Instruct",
+  "dtype": "float16",
+  "vision_dtype": "float32",
+  "attn": "eager",
+  "max_pixels": 802816,
+  "prompt_version": "p2",
+  "max_new_tokens": 384,
+  "decoding": "greedy",
+  "seed": 0,
+  "runs": [
+    [
+      "textvqa",
+      "dev"
+    ],
+    [
+      "docvqa",
+      "dev"
+    ],
+    [
+      "vitextvqa",
+      "dev"
+    ]
+  ],
+  "suffix_vi": "\nTrả lời câu hỏi dựa vào tài liệu. Chép nguyên văn từ tài liệu, ngắn nhất mà vẫn đủ ý. Nếu câu hỏi yêu cầu nhiều ý (liệt kê, các bước, các điều kiện, các thành phần), nêu đủ mọi ý, mỗi ý ngắn gọn, ngăn cách bằng dấu chấm phẩy. Chỉ ghi đáp án, không giải thích.",
+  "suffix_en": "\nAnswer the question based on the document. Copy the wording from the document verbatim, as short as possible while still complete. If the question asks for multiple items (a list, steps, conditions, components), give every item, each brief, separated by semicolons. Write only the answer, no explanation.",
+  "torch": "2.11.0+cu130",
+  "transformers": "5.20.2",
+  "accelerate": "1.15.0",
+  "qwen_vl_utils": "0.0.14",
+  "gpus": [
+    "Tesla T4",
+    "Tesla T4"
+  ]
+}
